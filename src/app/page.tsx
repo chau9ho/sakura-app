@@ -44,7 +44,7 @@ export default async function Home() {
        <h1 className="text-4xl font-bold text-center text-primary animate-pulse">
          🌸 櫻の畫室 🌸
        </h1>
-       <p className="text-center text-muted-foreground text-lg max-w-2xl">
+       <p className="text-center text-foreground/90 text-lg max-w-2xl"> {/* Changed text-muted-foreground */}
          捕捉春天嘅氣息！上載你嘅靚相，揀件靚靚和服👘同埋夢幻背景，等我哋嘅AI幫你創造獨一無二嘅櫻花主題頭像啦！✨
        </p>
 
@@ -52,7 +52,7 @@ export default async function Home() {
           <Stars className="h-4 w-4 text-primary" /> {/* Changed icon */}
           <AlertTitle className="text-primary font-semibold">點樣玩？</AlertTitle>
           <AlertDescription>
-            <ol className="list-decimal list-inside space-y-1 text-foreground/80 text-sm"> {/* Smaller text */}
+            <ol className="list-decimal list-inside space-y-1 text-foreground/80 text-sm"> {/* Kept text-foreground/80 */}
               <li>上載或者即刻影張靚相 📸</li>
               <li>喺下面揀件心水和服～ 👇</li>
               <li>再揀一個勁靚嘅背景 🏞️</li>

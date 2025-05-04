@@ -247,6 +247,7 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
   }
 
   return (
+    <TooltipProvider delayDuration={100}>
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4"> {/* Reduced space-y */}
 
@@ -265,13 +266,13 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
                         <Image
                             src={selectedPhotoPreview}
                             alt="已選相片預覽"
-                            layout="fill"
+                            fill // Use fill instead of layout="fill"
                             objectFit="contain"
                          />
                         ) : isCapturing ? (
                              <video ref={videoRef} className="w-full h-full object-cover" autoPlay playsInline muted />
                         ) : (
-                            <div className="text-center text-muted-foreground p-3"> {/* Reduced padding */}
+                            <div className="text-center text-foreground/80 p-3"> {/* Reduced padding, changed text color */}
                                 <Upload className="mx-auto h-8 w-8 mb-1" /> {/* Smaller icon */}
                                 <span className="text-sm">上載或影張相</span> {/* Smaller text */}
                             </div>
@@ -313,7 +314,7 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
                    </div>
                 </div>
               </FormControl>
-              <FormDescription className="text-xs">
+              <FormDescription className="text-xs text-foreground/80"> {/* Changed text color */}
                 上載張清啲嘅相，或者用相機即刻影返張。
               </FormDescription>
               <FormMessage />
@@ -329,7 +330,7 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
           render={({ field }) => (
             <FormItem className="space-y-1"> {/* Reduced space */}
               <FormLabel className="text-base font-semibold">揀件和服👘</FormLabel>
-              <FormDescription className="text-xs">
+              <FormDescription className="text-xs text-foreground/80"> {/* Changed text color */}
                 揀件和服俾你個頭像着啦。mouse hover可以放大睇㗎！
               </FormDescription>
               <FormControl>
@@ -341,47 +342,44 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
                   {kimonos.map((kimono) => (
                     <FormItem key={kimono.id} className="relative">
                       <FormControl>
-                        <TooltipProvider delayDuration={100}>
-                           <Tooltip>
-                              <TooltipTrigger asChild>
-                                  <RadioGroupItem value={kimono.id} id={`kimono-${kimono.id}`} className="sr-only peer" />
-                              </TooltipTrigger>
-                               <TooltipContent side="bottom" className="p-0 border-none bg-transparent shadow-xl max-w-xs">
-                                 <Image
-                                    src={kimono.src}
-                                    alt={kimono.name}
-                                    width={200} // Larger preview size
-                                    height={200}
-                                    className="rounded-md object-cover"
-                                    data-ai-hint={kimono.dataAiHint}
-                                  />
-                                  <p className="mt-1 text-center text-sm font-medium bg-background/90 backdrop-blur-sm px-2 py-1 rounded-b-md">
-                                     {kimono.name}
-                                  </p>
-                               </TooltipContent>
-                            </Tooltip>
-                         </TooltipProvider>
+                        {/* Tooltip wraps the label which contains the visible thumbnail */}
+                        <RadioGroupItem value={kimono.id} id={`kimono-${kimono.id}`} className="sr-only peer" />
                       </FormControl>
-                      <FormLabel
-                        htmlFor={`kimono-${kimono.id}`}
-                        className={cn(
-                          "block cursor-pointer rounded-md border-2 border-muted bg-popover transition-all duration-150 ease-in-out",
-                          "hover:border-accent hover:shadow-md",
-                          "peer-data-[state=checked]:border-primary peer-data-[state=checked]:ring-2 peer-data-[state=checked]:ring-primary/50 peer-data-[state=checked]:shadow-lg" // Styling for selected item
-                        )}
-                      >
-                        <div className="aspect-square overflow-hidden rounded-t-md">
-                           <Image
-                            src={kimono.src}
-                            alt={kimono.name}
-                            width={100}
-                            height={100}
-                            className="h-full w-full object-cover transition-transform duration-200 hover:scale-105"
-                            data-ai-hint={kimono.dataAiHint}
-                          />
-                        </div>
-                        <p className="truncate text-xs font-medium text-center p-1 bg-muted/50 rounded-b-md">{kimono.name}</p>
-                      </FormLabel>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <FormLabel
+                            htmlFor={`kimono-${kimono.id}`}
+                            className={cn(
+                              "block cursor-pointer rounded-md border-2 border-muted bg-popover transition-all duration-150 ease-in-out",
+                              "hover:border-accent hover:shadow-md",
+                              "peer-data-[state=checked]:border-primary peer-data-[state=checked]:ring-2 peer-data-[state=checked]:ring-primary/50 peer-data-[state=checked]:shadow-lg" // Styling for selected item
+                            )}
+                          >
+                            <div className="aspect-square overflow-hidden rounded-t-md">
+                              <Image
+                                src={kimono.src}
+                                alt={kimono.name}
+                                width={100}
+                                height={100}
+                                className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-105" // Use group-hover
+                                data-ai-hint={kimono.dataAiHint}
+                              />
+                            </div>
+                            <p className="truncate text-xs font-medium text-center p-1 bg-muted/50 rounded-b-md">{kimono.name}</p>
+                          </FormLabel>
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom" className="p-0 border-none bg-transparent shadow-xl max-w-xs w-[200px] h-[200px] flex flex-col items-center">
+                          <Image
+                             src={kimono.src}
+                             alt={kimono.name}
+                             width={200} // Larger preview size
+                             height={200}
+                             className="rounded-md object-cover"
+                             data-ai-hint={kimono.dataAiHint}
+                           />
+                          {/* Tooltip text removed for cleaner visual, name is below thumbnail */}
+                        </TooltipContent>
+                      </Tooltip>
                     </FormItem>
                   ))}
                 </RadioGroup>
@@ -399,7 +397,7 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
           render={({ field }) => (
             <FormItem className="space-y-1"> {/* Reduced space */}
               <FormLabel className="text-base font-semibold">揀個背景🏞️</FormLabel>
-              <FormDescription className="text-xs">
+              <FormDescription className="text-xs text-foreground/80"> {/* Changed text color */}
                  揀個背景襯托你嘅頭像。mouse hover可以放大睇㗎！
               </FormDescription>
               <FormControl>
@@ -409,49 +407,46 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
                    className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2 pt-1" // Responsive grid layout
                  >
                    {backgrounds.map((bg) => (
-                     <FormItem key={bg.id} className="relative">
+                     <FormItem key={bg.id} className="relative group"> {/* Added group class */}
                        <FormControl>
-                          <TooltipProvider delayDuration={100}>
-                             <Tooltip>
-                               <TooltipTrigger asChild>
-                                  <RadioGroupItem value={bg.id} id={`bg-${bg.id}`} className="sr-only peer" />
-                               </TooltipTrigger>
-                               <TooltipContent side="bottom" className="p-0 border-none bg-transparent shadow-xl max-w-xs">
-                                   <Image
-                                    src={bg.src}
-                                    alt={bg.name}
-                                    width={200} // Larger preview size
-                                    height={200}
-                                    className="rounded-md object-cover"
-                                    data-ai-hint={bg.dataAiHint}
-                                   />
-                                   <p className="mt-1 text-center text-sm font-medium bg-background/90 backdrop-blur-sm px-2 py-1 rounded-b-md">
-                                      {bg.name}
-                                   </p>
-                               </TooltipContent>
-                             </Tooltip>
-                          </TooltipProvider>
+                          <RadioGroupItem value={bg.id} id={`bg-${bg.id}`} className="sr-only peer" />
                        </FormControl>
-                       <FormLabel
-                         htmlFor={`bg-${bg.id}`}
-                         className={cn(
-                            "block cursor-pointer rounded-md border-2 border-muted bg-popover transition-all duration-150 ease-in-out",
-                            "hover:border-accent hover:shadow-md",
-                            "peer-data-[state=checked]:border-primary peer-data-[state=checked]:ring-2 peer-data-[state=checked]:ring-primary/50 peer-data-[state=checked]:shadow-lg" // Styling for selected item
-                         )}
-                       >
-                          <div className="aspect-video overflow-hidden rounded-t-md"> {/* Use aspect-video for backgrounds */}
-                              <Image
-                               src={bg.src}
-                               alt={bg.name}
-                               width={160} // Adjust size if needed
-                               height={90}
-                               className="h-full w-full object-cover transition-transform duration-200 hover:scale-105"
-                               data-ai-hint={bg.dataAiHint}
-                              />
-                           </div>
-                           <p className="truncate text-xs font-medium text-center p-1 bg-muted/50 rounded-b-md">{bg.name}</p>
-                       </FormLabel>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                               <FormLabel
+                                 htmlFor={`bg-${bg.id}`}
+                                 className={cn(
+                                    "block cursor-pointer rounded-md border-2 border-muted bg-popover transition-all duration-150 ease-in-out",
+                                    "hover:border-accent hover:shadow-md",
+                                    "peer-data-[state=checked]:border-primary peer-data-[state=checked]:ring-2 peer-data-[state=checked]:ring-primary/50 peer-data-[state=checked]:shadow-lg" // Styling for selected item
+                                 )}
+                               >
+                                  {/* Change aspect ratio here */}
+                                  <div className="aspect-[2/3] overflow-hidden rounded-t-md">
+                                      <Image
+                                       src={bg.src}
+                                       alt={bg.name}
+                                       width={100} // Adjust width to maintain 2:3 ratio
+                                       height={150} // Adjust height to maintain 2:3 ratio
+                                       className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-105" // Use group-hover
+                                       data-ai-hint={bg.dataAiHint}
+                                      />
+                                   </div>
+                                   <p className="truncate text-xs font-medium text-center p-1 bg-muted/50 rounded-b-md">{bg.name}</p>
+                               </FormLabel>
+                            </TooltipTrigger>
+                            <TooltipContent side="bottom" className="p-0 border-none bg-transparent shadow-xl max-w-xs w-[200px] h-[200px] flex flex-col items-center">
+                                <Image
+                                 src={bg.src}
+                                 alt={bg.name}
+                                 width={200} // Larger preview size
+                                 height={200}
+                                 className="rounded-md object-cover"
+                                 data-ai-hint={bg.dataAiHint}
+                                />
+                                {/* Tooltip text removed for cleaner visual, name is below thumbnail */}
+                            </TooltipContent>
+                        </Tooltip>
                      </FormItem>
                    ))}
                  </RadioGroup>
@@ -476,7 +471,7 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
                    {...field}
                  />
                </FormControl>
-               <FormDescription className="text-xs">
+               <FormDescription className="text-xs text-foreground/80"> {/* Changed text color */}
                  加少少描述，等個頭像更加獨特（最多150字）。
                </FormDescription>
                <FormMessage />
@@ -503,7 +498,7 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
             {isPending && (
               <div className="space-y-1">
                  <Progress value={progress} className="w-full [&>div]:bg-accent h-1.5" /> {/* Thinner progress bar */}
-                 <p className="text-xs text-center text-muted-foreground">努力生成緊你嘅頭像，等等啊...</p>
+                 <p className="text-xs text-center text-foreground/80">努力生成緊你嘅頭像，等等啊...</p> {/* Changed text color */}
                </div>
             )}
         </div>
@@ -516,7 +511,7 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
                <Alert variant="default" className="mb-2 border-accent bg-accent/10 p-3"> {/* Reduced margin/padding */}
                   <Sparkles className="h-4 w-4 text-accent" />
                   <AlertTitle className="text-accent font-semibold text-sm">搞掂！✨</AlertTitle> {/* Smaller title */}
-                  <AlertDescription className="text-xs">
+                  <AlertDescription className="text-xs text-foreground/80"> {/* Changed text color */}
                     你嘅靚靚櫻花頭像整好喇！右掣或者長按就可以儲存。
                   </AlertDescription>
                 </Alert>
@@ -524,7 +519,7 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
                 <Image
                   src={generatedImageUrl}
                   alt="生成嘅頭像"
-                  layout="fill"
+                  fill // Use fill instead of layout="fill"
                   objectFit="cover"
                   data-ai-hint="generated avatar portrait"
                 />
@@ -545,5 +540,6 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
         )}
       </form>
     </Form>
+    </TooltipProvider>
   );
 }
