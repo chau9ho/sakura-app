@@ -64,6 +64,7 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
   const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const [hasCameraPermission, setHasCameraPermission] = useState<boolean | null>(null); // Track camera permission
   const [stream, setStream] = useState<MediaStream | null>(null); // Store the stream
+  const captureTimeoutRef = useRef<NodeJS.Timeout | null>(null); // Ref for capture timeout
 
 
   const form = useForm<AvatarFormValues>({
@@ -168,6 +169,12 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
      }
       setIsCapturing(false); // Always set capturing to false when stopping
       console.log("Set isCapturing to false.");
+      // Clear any pending capture timeout
+      if (captureTimeoutRef.current) {
+        clearTimeout(captureTimeoutRef.current);
+        captureTimeoutRef.current = null;
+        console.log("Cleared pending capture timeout.");
+      }
   }, [stream]); // Depend only on the stream state itself
 
 
@@ -239,7 +246,9 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
 
         if (videoRef.current) {
           videoRef.current.srcObject = newStream;
-          // Use a promise to wait for video to be ready
+          setIsCapturing(true); // Set capturing true immediately to show video
+          console.log("Set isCapturing=true, srcObject assigned.");
+          // Use a promise to wait for video to be ready for PLAYING, not just metadata
           await new Promise<void>((resolve, reject) => {
               const currentVideoRef = videoRef.current; // Capture ref in closure
               if (!currentVideoRef) {
@@ -248,47 +257,50 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
                   return;
               }
 
-              const onMetadataLoaded = async () => {
-                  // Clean up listeners first
-                  currentVideoRef.removeEventListener('loadedmetadata', onMetadataLoaded);
-                  currentVideoRef.removeEventListener('error', onError);
-                   try {
-                       if (videoRef.current) { // Check ref again inside async callback
-                         await videoRef.current.play();
-                         console.log("Camera stream started and playing.");
-                         setIsCapturing(true); // Set capturing true only after successful play
-                         resolve();
-                       } else {
-                           console.error("Video ref became null before playing.");
-                           reject("Video ref became null before playing");
-                       }
-                   } catch (playError) {
-                       console.error("Error playing video stream:", playError);
-                       reject(playError);
-                   }
-               };
+              const onCanPlay = async () => {
+                 // Clean up listeners first
+                 currentVideoRef.removeEventListener('canplay', onCanPlay);
+                 currentVideoRef.removeEventListener('error', onError);
+                  try {
+                      if (videoRef.current) { // Check ref again inside async callback
+                        await videoRef.current.play();
+                        console.log("Camera stream started and playing.");
+                        // isCapturing is already true, just resolve
+                        resolve();
+                      } else {
+                          console.error("Video ref became null before playing.");
+                          reject("Video ref became null before playing");
+                      }
+                  } catch (playError) {
+                      console.error("Error playing video stream:", playError);
+                      reject(playError);
+                  }
+              };
 
               const onError = (e: Event) => {
                   // Clean up listeners
-                  currentVideoRef.removeEventListener('loadedmetadata', onMetadataLoaded);
+                  currentVideoRef.removeEventListener('canplay', onCanPlay);
                   currentVideoRef.removeEventListener('error', onError);
                   console.error("Video element error during setup:", e);
                   reject(e);
                };
 
-              currentVideoRef.addEventListener('loadedmetadata', onMetadataLoaded);
+              currentVideoRef.addEventListener('canplay', onCanPlay);
               currentVideoRef.addEventListener('error', onError);
 
-              // Check if metadata is already loaded (possible race condition)
-              if (currentVideoRef.readyState >= currentVideoRef.HAVE_METADATA) {
-                  console.log("Video metadata already loaded, attempting to play directly.");
-                  onMetadataLoaded(); // Call handler directly
+              // Check if video can already play (possible race condition)
+              if (currentVideoRef.readyState >= currentVideoRef.HAVE_ENOUGH_DATA) {
+                  console.log("Video can already play, attempting to play directly.");
+                  onCanPlay(); // Call handler directly
+              } else {
+                  console.log("Waiting for 'canplay' event...");
               }
           });
         } else {
             console.warn("Video ref not available after getting stream.");
             newStream.getTracks().forEach(track => track.stop()); // Stop stream if ref is missing
             setStream(null);
+            setIsCapturing(false); // Ensure state is correct
             throw new Error("Video element reference is missing.");
         }
       } catch (err: any) {
@@ -306,8 +318,14 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
 
 
   // Capture photo from video stream
-  const capturePhoto = useCallback(() => {
-    console.log("Attempting to capture photo..."); // Debugging line
+   const capturePhoto = useCallback(() => {
+    console.log("Attempting to capture photo...");
+
+    // Clear any previous timeout
+    if (captureTimeoutRef.current) {
+        clearTimeout(captureTimeoutRef.current);
+        captureTimeoutRef.current = null;
+    }
 
     const video = videoRef.current;
     const canvas = canvasRef.current;
@@ -321,76 +339,64 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
 
     if (!isCapturing) {
         console.warn("Capture called when not actively capturing.");
-        // Optionally show a toast, but don't necessarily stop the camera unless it shouldn't be running
-        // stopCamera();
         return;
     }
 
+    const attemptCapture = (retries = 3, delay = 100) => {
+        console.log(`Attempting capture (Retry ${4 - retries})`);
+        const context = canvas.getContext('2d');
 
-    const context = canvas.getContext('2d');
-    if (!context) {
-        console.error("Capture failed: Canvas 2D context is unavailable.");
-        toast({ title: "影相失敗", description: "無法獲取畫布內容。", variant: "destructive" });
-        stopCamera();
-        return;
-    }
+        // Check video readiness and context
+        if (context && video.readyState >= video.HAVE_ENOUGH_DATA && video.videoWidth > 0 && video.videoHeight > 0 && !video.paused) {
+            try {
+                console.log("Video is ready, drawing to canvas.");
+                const videoWidth = video.videoWidth;
+                const videoHeight = video.videoHeight;
+                const size = Math.min(videoWidth, videoHeight);
+                const canvasSize = 480;
+                canvas.width = canvasSize;
+                canvas.height = canvasSize;
+                const sx = (videoWidth - size) / 2;
+                const sy = (videoHeight - size) / 2;
 
-    // Check video readiness more thoroughly
-    if (video.readyState < video.HAVE_METADATA || video.videoWidth === 0 || video.videoHeight === 0) {
-        console.error("Capture failed: Video not ready or has no dimensions.", {
-            readyState: video.readyState,
-            width: video.videoWidth,
-            height: video.videoHeight,
-        });
-        toast({ title: "影相失敗", description: "相機影片尚未準備好，請稍候再試。", variant: "destructive" });
-        // Don't stop camera here, allow user to retry? Or stop? Let's stop for now.
-        stopCamera();
-        return;
-    }
+                context.translate(canvasSize, 0);
+                context.scale(-1, 1);
+                context.drawImage(video, sx, sy, size, size, 0, 0, canvasSize, canvasSize);
+                context.setTransform(1, 0, 0, 1, 0, 0);
+                console.log("Photo drawn to canvas (mirrored).");
 
+                const dataUrl = canvas.toDataURL('image/png');
+                stopCamera();
+                handlePhotoSelection('camera', dataUrl);
+                console.log("Photo captured successfully (as data URL).");
 
-    try {
-        const videoWidth = video.videoWidth;
-        const videoHeight = video.videoHeight;
+            } catch (drawError) {
+                console.error("Error drawing image to canvas:", drawError);
+                toast({ title: "影相失敗", description: "繪製圖像時發生錯誤。", variant: "destructive" });
+                stopCamera();
+            }
+        } else {
+            console.warn("Video not ready or context unavailable on attempt.", {
+                readyState: video.readyState,
+                width: video.videoWidth,
+                height: video.videoHeight,
+                paused: video.paused,
+                contextExists: !!context,
+            });
+            if (retries > 0) {
+                console.log(`Retrying capture in ${delay}ms...`);
+                captureTimeoutRef.current = setTimeout(() => attemptCapture(retries - 1, delay * 2), delay); // Exponential backoff
+            } else {
+                console.error("Capture failed after multiple retries: Video not ready or context unavailable.");
+                toast({ title: "影相失敗", description: "未能成功影相，請再試一次或檢查相機連接。", variant: "destructive" });
+                stopCamera(); // Stop camera on final failure
+            }
+        }
+    };
 
-        // Create a square canvas
-        const size = Math.min(videoWidth, videoHeight);
-        const canvasSize = 480; // Output size for the photo
-        canvas.width = canvasSize;
-        canvas.height = canvasSize;
+    attemptCapture(); // Start the capture attempt process
 
-        // Calculate source rectangle (crop to center square)
-        const sx = (videoWidth - size) / 2;
-        const sy = (videoHeight - size) / 2;
-        const sWidth = size;
-        const sHeight = size;
-
-        // Draw the square portion of the video onto the square canvas
-        // Flip the image horizontally for a mirror effect
-        context.translate(canvasSize, 0);
-        context.scale(-1, 1);
-        context.drawImage(video, sx, sy, sWidth, sHeight, 0, 0, canvasSize, canvasSize);
-        // Reset the transformation
-        context.setTransform(1, 0, 0, 1, 0, 0);
-
-        console.log("Photo drawn to canvas (mirrored).");
-
-        const dataUrl = canvas.toDataURL('image/png'); // Use PNG for consistency
-
-        // Stop the camera *after* successful capture and getting data URL
-        stopCamera();
-
-        // Now handle the selection, which also updates the preview
-        handlePhotoSelection('camera', dataUrl); // Pass dataUrl to handler
-        console.log("Photo captured successfully (as data URL).");
-
-    } catch (drawError) {
-        console.error("Error drawing image to canvas:", drawError);
-        toast({ title: "影相失敗", description: "繪製圖像時發生錯誤。", variant: "destructive" });
-        stopCamera(); // Stop camera on draw failure
-    }
-
-  }, [isCapturing, handlePhotoSelection, toast, stopCamera]); // stopCamera is stable now
+}, [isCapturing, handlePhotoSelection, toast, stopCamera]);
 
 
    // --- Photo Fetching Logic ---
@@ -488,6 +494,10 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
         // Revoke blob URL on unmount
         if (selectedPhotoPreview && selectedPhotoPreview.startsWith('blob:')) {
             URL.revokeObjectURL(selectedPhotoPreview);
+        }
+         // Clear capture timeout on unmount
+        if (captureTimeoutRef.current) {
+            clearTimeout(captureTimeoutRef.current);
         }
     };
     // Rely only on stopCamera, which itself depends on `stream`.
@@ -666,7 +676,7 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
               setIsQrCodeDialogOpen={setIsQrCodeDialogOpen}
               qrCodeUrl={qrCodeUrl}
               // Pass true for isUserTriggered when refresh button is clicked
-              fetchUserPhotos={(username) => fetchUserPhotos(username, true)}
+              fetchUserPhotos={fetchUserPhotos} // Pass the stable fetchUserPhotos function
               isFetchingPhotos={isFetchingPhotos}
               fetchedPhotos={fetchedPhotos}
               selectedFetchedPhotoId={selectedFetchedPhotoId}

@@ -86,33 +86,44 @@ const PhotoSelectionSection: React.FC<PhotoSelectionSectionProps> = ({
                     <div className="flex-1 space-y-1">
                       {/* Preview Area */}
                       <div className="relative w-full max-w-[200px] mx-auto aspect-square border border-dashed border-primary/50 rounded-lg flex items-center justify-center bg-secondary/50 overflow-hidden">
-                        {selectedPhotoPreview ? (
+                        {/* Always render video element, control visibility with className */}
+                        <video
+                          ref={videoRef}
+                          className={cn(
+                            "w-full h-full object-cover",
+                            // Show only if capturing and has permission, hide otherwise
+                            (!isCapturing || hasCameraPermission === false) && "hidden"
+                          )}
+                          autoPlay
+                          playsInline
+                          muted
+                        />
+
+                        {/* Show preview image if available and not capturing */}
+                        {selectedPhotoPreview && !isCapturing && (
                           <Image
                             src={selectedPhotoPreview}
                             alt="已選相片預覽"
                             fill
                             objectFit="contain"
                             sizes="(max-width: 640px) 50vw, 200px"
-                            // Ensure unique key if src can change rapidly, though fill/objectFit usually handles it
-                            key={selectedPhotoPreview}
+                            key={selectedPhotoPreview} // Ensure key updates if src changes
                           />
-                        ) : isCapturing ? (
-                           // Show video only when capturing AND permission granted
-                          <video ref={videoRef} className={cn("w-full h-full object-cover", hasCameraPermission === false && "hidden")} autoPlay playsInline muted />
-                        ) : (
-                          <div className="text-center text-foreground/80 p-2">
-                            <ImageIcon className="mx-auto h-6 w-6 mb-1" />
-                            <span className="text-xs">預覽會喺度顯示</span>
-                          </div>
                         )}
-                         {/* Always render video element for ref, but hide it when not capturing */}
-                         {!isCapturing && <video ref={videoRef} className="absolute w-px h-px -z-10 opacity-0 pointer-events-none" playsInline muted />}
+
+                         {/* Show placeholder only if not capturing AND no preview exists */}
+                         {!isCapturing && !selectedPhotoPreview && (
+                            <div className="text-center text-foreground/80 p-2">
+                              <ImageIcon className="mx-auto h-6 w-6 mb-1" />
+                              <span className="text-xs">預覽會喺度顯示</span>
+                            </div>
+                         )}
                       </div>
                       {/* Hidden canvas for capturing photo */}
                       <canvas ref={canvasRef} style={{ display: 'none' }}></canvas>
 
-                      {/* Camera Permission Alert */}
-                      {hasCameraPermission === false && !isCapturing && (
+                      {/* Camera Permission Alert - Show when permission denied, regardless of capture state */}
+                      {hasCameraPermission === false && (
                         <Alert variant="destructive" className="max-w-[200px] mx-auto p-2 text-xs">
                           <AlertTriangle className="h-3 w-3" />
                           <AlertTitle className="text-xs">相機權限</AlertTitle>
@@ -121,18 +132,6 @@ const PhotoSelectionSection: React.FC<PhotoSelectionSectionProps> = ({
                           </AlertDescription>
                         </Alert>
                       )}
-
-                       {/* Show alert when camera is active but permission is denied */}
-                       {isCapturing && hasCameraPermission === false && (
-                           <Alert variant="destructive" className="max-w-[200px] mx-auto p-2 text-xs">
-                             <AlertTriangle className="h-3 w-3" />
-                             <AlertTitle className="text-xs">冇相機權限</AlertTitle>
-                             <AlertDescription className="text-xs">
-                               請允許相機權限再試。
-                             </AlertDescription>
-                           </Alert>
-                       )}
-
 
                       {/* Action Buttons */}
                       <div className="flex gap-1.5 max-w-[200px] mx-auto">
