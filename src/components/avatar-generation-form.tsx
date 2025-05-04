@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect, useTransition } from 'react';
@@ -17,22 +16,23 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"; // Import RadioGroup
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { generateAvatarPrompt } from '@/ai/flows/generate-avatar-prompt';
-import { Loader2, Upload, Camera, Sparkles, Wand2 } from 'lucide-react'; // Added Wand2
+import { Loader2, Upload, Camera, Sparkles, Wand2, Image as ImageIcon, Shirt, Trees, Pencil, CheckCircle2 } from 'lucide-react'; // Added relevant icons
 import { Progress } from "@/components/ui/progress";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Card, CardContent } from "@/components/ui/card";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"; // Import Tooltip components
-import { cn } from "@/lib/utils"; // Import cn utility
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"; // Import Accordion components
+import { cn } from "@/lib/utils";
 
 // Define the type for image options passed as props
 export interface ImageOption {
   id: string;
   name: string;
-  src: string; // Changed from 'image' to 'src' to match fetched data
+  src: string;
   description: string;
   dataAiHint: string;
 }
@@ -47,8 +47,8 @@ const formSchema = z.object({
   photo: z.any().refine(fileOrDataUrl => fileOrDataUrl instanceof File || (typeof fileOrDataUrl === 'string' && fileOrDataUrl.startsWith('data:image/')), {
     message: "請上載或影張相。",
   }),
-  kimono: z.string().min(1, { message: "請揀一件和服。" }), // Store the ID (filename)
-  background: z.string().min(1, { message: "請揀一個背景。" }), // Store the ID (filename)
+  kimono: z.string().min(1, { message: "請揀一件和服。" }),
+  background: z.string().min(1, { message: "請揀一個背景。" }),
   userDescription: z.string().max(150, { message: "描述唔可以超過150個字。" }).optional(),
 });
 
@@ -73,6 +73,11 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
       userDescription: "",
     },
   });
+
+   // Watch form values to enable/disable accordion items and show checkmarks
+  const watchedPhoto = form.watch("photo");
+  const watchedKimono = form.watch("kimono");
+  const watchedBackground = form.watch("background");
 
   // Handle photo selection for preview
   const handlePhotoChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -102,7 +107,6 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
         const stream = await navigator.mediaDevices.getUserMedia({ video: true });
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
-          // videoRef.current.play(); // play() is called by autoPlay prop
         }
       } catch (err) {
         console.error("影相機出錯: ", err);
@@ -128,18 +132,21 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
     if (videoRef.current && canvasRef.current && isCapturing) {
       const context = canvasRef.current.getContext('2d');
       const video = videoRef.current;
-      if (context && video.readyState >= video.HAVE_CURRENT_DATA) { // Check if video data is available
-        // Set canvas dimensions based on video aspect ratio
+      if (context && video.readyState >= video.HAVE_CURRENT_DATA) {
+        // Set canvas dimensions based on video aspect ratio for capture
         const videoWidth = video.videoWidth;
         const videoHeight = video.videoHeight;
-        canvasRef.current.width = videoWidth;
-        canvasRef.current.height = videoHeight;
+        // Use a smaller dimension for capture if needed, maintaining aspect ratio
+        const captureWidth = 480; // Example smaller width
+        const captureHeight = (videoHeight / videoWidth) * captureWidth;
+        canvasRef.current.width = captureWidth;
+        canvasRef.current.height = captureHeight;
 
-        context.drawImage(video, 0, 0, videoWidth, videoHeight);
+        context.drawImage(video, 0, 0, captureWidth, captureHeight); // Draw smaller image
         const dataUrl = canvasRef.current.toDataURL('image/png');
-        setSelectedPhotoPreview(dataUrl); // Show captured photo preview
-        form.setValue("photo", dataUrl); // Set form value to data URL string
-        stopCamera(); // Stop camera after capture
+        setSelectedPhotoPreview(dataUrl);
+        form.setValue("photo", dataUrl);
+        stopCamera();
       } else {
          toast({
           title: "影相失敗",
@@ -173,13 +180,11 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
       setGeneratedImageUrl(null);
       setProgress(0);
 
-      // Simulate progress
       const interval = setInterval(() => {
         setProgress((prev) => (prev >= 95 ? 95 : prev + 5));
-      }, 300); // Faster progress simulation
+      }, 300);
 
       try {
-        // Find the selected item details using the ID (filename) stored in the form values
         const selectedKimono = kimonos.find(k => k.id === values.kimono);
         const selectedBackground = backgrounds.find(b => b.id === values.background);
 
@@ -191,14 +196,13 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
           });
           clearInterval(interval);
           setProgress(0);
-          return; // Stop submission if items not found
+          return;
         }
 
-        // 1. Generate Prompt using AI Flow
         setProgress(10);
         const promptResult = await generateAvatarPrompt({
-          kimono: selectedKimono.description, // Pass description to the flow
-          background: selectedBackground.description, // Pass description to the flow
+          kimono: selectedKimono.description,
+          background: selectedBackground.description,
           userDescription: values.userDescription,
         });
          setProgress(30);
@@ -210,19 +214,14 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
          });
 
 
-        // 2. TODO: Integrate with actual image generation API
-        // Placeholder simulation
         console.log("模擬緊圖像生成，用咗:", {
           prompt: promptResult.prompt,
           photo: values.photo instanceof File ? values.photo.name : "影咗嘅相",
         });
 
-        // Simulate API call delay
-        await new Promise(resolve => setTimeout(resolve, 2000)); // Shorter delay
+        await new Promise(resolve => setTimeout(resolve, 2000));
          setProgress(90);
 
-
-        // Replace with actual generated image URL from the API response
         const simulatedImageUrl = `https://picsum.photos/512/512?random=${Date.now()}`;
         setGeneratedImageUrl(simulatedImageUrl);
         setProgress(100);
@@ -239,9 +238,9 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
           description: error instanceof Error ? error.message : "發生咗啲意料之外嘅錯誤。",
           variant: "destructive",
         });
-         setProgress(0); // Reset progress on error
+         setProgress(0);
       } finally {
-         clearInterval(interval); // Clear progress interval
+         clearInterval(interval);
       }
     });
   }
@@ -249,243 +248,284 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
   return (
     <TooltipProvider delayDuration={100}>
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4"> {/* Reduced space-y */}
+      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-2"> {/* Reduced space-y */}
 
-        {/* Photo Input */}
-         <FormField
-          control={form.control}
-          name="photo"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel className="text-base font-semibold">你嘅相</FormLabel> {/* Slightly smaller label */}
-              <FormControl>
-                <div className="flex flex-col sm:flex-row gap-3 items-start"> {/* Reduced gap */}
-                  <div className="flex-1 space-y-2">
-                     <div className="relative w-full aspect-[4/3] border border-dashed border-primary/50 rounded-lg flex items-center justify-center bg-secondary/50 overflow-hidden"> {/* Changed aspect ratio */}
-                        {selectedPhotoPreview ? (
-                        <Image
-                            src={selectedPhotoPreview}
-                            alt="已選相片預覽"
-                            fill // Use fill instead of layout="fill"
-                            objectFit="contain"
-                         />
-                        ) : isCapturing ? (
-                             <video ref={videoRef} className="w-full h-full object-cover" autoPlay playsInline muted />
-                        ) : (
-                            <div className="text-center text-foreground/80 p-3"> {/* Reduced padding, changed text color */}
-                                <Upload className="mx-auto h-8 w-8 mb-1" /> {/* Smaller icon */}
-                                <span className="text-sm">上載或影張相</span> {/* Smaller text */}
-                            </div>
-                        )}
-                        {!isCapturing && <video ref={videoRef} className="absolute w-px h-px opacity-0 pointer-events-none" playsInline muted />}
-                     </div>
-                     <canvas ref={canvasRef} style={{ display: 'none' }}></canvas>
+        <Accordion type="single" collapsible defaultValue="photo-section" className="w-full space-y-1">
 
-                     {/* Action Buttons */}
-                      <div className="flex gap-2">
-                          {!isCapturing ? (
-                            <>
-                              <Button type="button" variant="outline" className="flex-1 relative text-xs h-8 px-2"> {/* Compact button */}
-                                 <Upload className="mr-1 h-3.5 w-3.5" />
-                                 上載相片
-                                 <Input
-                                    type="file"
-                                    accept="image/*"
-                                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                                    onChange={handlePhotoChange}
-                                  />
-                              </Button>
-                              <Button type="button" variant="outline" className="flex-1 text-xs h-8 px-2" onClick={startCamera}> {/* Compact button */}
-                                <Camera className="mr-1 h-3.5 w-3.5" />
-                                即刻影相
-                              </Button>
-                            </>
-                          ) : (
-                             <>
-                              <Button type="button" variant="secondary" className="flex-1 text-xs h-8 px-2" onClick={stopCamera}>
-                                取消
-                              </Button>
-                              <Button type="button" variant="default" className="flex-1 text-xs h-8 px-2" onClick={capturePhoto}>
-                                 影啦！
-                              </Button>
-                             </>
-                          )}
-                       </div>
-                   </div>
-                </div>
-              </FormControl>
-              <FormDescription className="text-xs text-foreground/80"> {/* Changed text color */}
-                上載張清啲嘅相，或者用相機即刻影返張。
-              </FormDescription>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-
-        {/* Kimono Selector Grid */}
-        <FormField
-          control={form.control}
-          name="kimono"
-          render={({ field }) => (
-            <FormItem className="space-y-1"> {/* Reduced space */}
-              <FormLabel className="text-base font-semibold">揀件和服👘</FormLabel>
-              <FormDescription className="text-xs text-foreground/80"> {/* Changed text color */}
-                揀件和服俾你個頭像着啦。mouse hover可以放大睇㗎！
-              </FormDescription>
-              <FormControl>
-                <RadioGroup
-                  onValueChange={field.onChange}
-                  defaultValue={field.value}
-                  className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2 pt-1" // Responsive grid layout
-                >
-                  {kimonos.map((kimono) => (
-                    <FormItem key={kimono.id} className="relative">
+           {/* --- Photo Section --- */}
+           <AccordionItem value="photo-section">
+             <AccordionTrigger className="text-base font-semibold hover:no-underline px-2 py-2 rounded-md hover:bg-secondary/50 data-[state=open]:bg-secondary/80">
+                <span className="flex items-center gap-2">
+                  <ImageIcon className="h-5 w-5" />
+                   步驟一：你嘅相
+                   {watchedPhoto && <CheckCircle2 className="h-5 w-5 text-green-500" />}
+                </span>
+             </AccordionTrigger>
+             <AccordionContent className="pt-1 pb-2 px-2">
+                <FormField
+                  control={form.control}
+                  name="photo"
+                  render={({ field }) => (
+                    <FormItem>
                       <FormControl>
-                        {/* Tooltip wraps the label which contains the visible thumbnail */}
-                        <RadioGroupItem value={kimono.id} id={`kimono-${kimono.id}`} className="sr-only peer" />
-                      </FormControl>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <FormLabel
-                            htmlFor={`kimono-${kimono.id}`}
-                            className={cn(
-                              "block cursor-pointer rounded-md border-2 border-muted bg-popover transition-all duration-150 ease-in-out",
-                              "hover:border-accent hover:shadow-md",
-                              "peer-data-[state=checked]:border-primary peer-data-[state=checked]:ring-2 peer-data-[state=checked]:ring-primary/50 peer-data-[state=checked]:shadow-lg" // Styling for selected item
-                            )}
-                          >
-                            <div className="aspect-square overflow-hidden rounded-t-md">
-                              <Image
-                                src={kimono.src}
-                                alt={kimono.name}
-                                width={100}
-                                height={100}
-                                className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-105" // Use group-hover
-                                data-ai-hint={kimono.dataAiHint}
-                              />
-                            </div>
-                            <p className="truncate text-xs font-medium text-center p-1 bg-muted/50 rounded-b-md">{kimono.name}</p>
-                          </FormLabel>
-                        </TooltipTrigger>
-                        <TooltipContent side="bottom" className="p-0 border-none bg-transparent shadow-xl max-w-xs w-[200px] h-[200px] flex flex-col items-center">
-                          <Image
-                             src={kimono.src}
-                             alt={kimono.name}
-                             width={200} // Larger preview size
-                             height={200}
-                             className="rounded-md object-cover"
-                             data-ai-hint={kimono.dataAiHint}
-                           />
-                          {/* Tooltip text removed for cleaner visual, name is below thumbnail */}
-                        </TooltipContent>
-                      </Tooltip>
-                    </FormItem>
-                  ))}
-                </RadioGroup>
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-
-        {/* Background Selector Grid */}
-        <FormField
-          control={form.control}
-          name="background"
-          render={({ field }) => (
-            <FormItem className="space-y-1"> {/* Reduced space */}
-              <FormLabel className="text-base font-semibold">揀個背景🏞️</FormLabel>
-              <FormDescription className="text-xs text-foreground/80"> {/* Changed text color */}
-                 揀個背景襯托你嘅頭像。mouse hover可以放大睇㗎！
-              </FormDescription>
-              <FormControl>
-                 <RadioGroup
-                   onValueChange={field.onChange}
-                   defaultValue={field.value}
-                   className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2 pt-1" // Responsive grid layout
-                 >
-                   {backgrounds.map((bg) => (
-                     <FormItem key={bg.id} className="relative group"> {/* Added group class */}
-                       <FormControl>
-                          <RadioGroupItem value={bg.id} id={`bg-${bg.id}`} className="sr-only peer" />
-                       </FormControl>
-                        <Tooltip>
-                            <TooltipTrigger asChild>
-                               <FormLabel
-                                 htmlFor={`bg-${bg.id}`}
-                                 className={cn(
-                                    "block cursor-pointer rounded-md border-2 border-muted bg-popover transition-all duration-150 ease-in-out",
-                                    "hover:border-accent hover:shadow-md",
-                                    "peer-data-[state=checked]:border-primary peer-data-[state=checked]:ring-2 peer-data-[state=checked]:ring-primary/50 peer-data-[state=checked]:shadow-lg" // Styling for selected item
-                                 )}
-                               >
-                                  {/* Change aspect ratio here */}
-                                  <div className="aspect-[2/3] overflow-hidden rounded-t-md">
-                                      <Image
-                                       src={bg.src}
-                                       alt={bg.name}
-                                       width={100} // Adjust width to maintain 2:3 ratio
-                                       height={150} // Adjust height to maintain 2:3 ratio
-                                       className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-105" // Use group-hover
-                                       data-ai-hint={bg.dataAiHint}
-                                      />
-                                   </div>
-                                   <p className="truncate text-xs font-medium text-center p-1 bg-muted/50 rounded-b-md">{bg.name}</p>
-                               </FormLabel>
-                            </TooltipTrigger>
-                            <TooltipContent side="bottom" className="p-0 border-none bg-transparent shadow-xl max-w-xs w-[200px] h-[200px] flex flex-col items-center">
+                        <div className="flex flex-col sm:flex-row gap-2 items-start">
+                          <div className="flex-1 space-y-1">
+                             {/* Reduced size: aspect-square and max-w-xs */}
+                             <div className="relative w-full max-w-xs mx-auto aspect-square border border-dashed border-primary/50 rounded-lg flex items-center justify-center bg-secondary/50 overflow-hidden">
+                                {selectedPhotoPreview ? (
                                 <Image
-                                 src={bg.src}
-                                 alt={bg.name}
-                                 width={200} // Larger preview size
-                                 height={200}
-                                 className="rounded-md object-cover"
-                                 data-ai-hint={bg.dataAiHint}
-                                />
-                                {/* Tooltip text removed for cleaner visual, name is below thumbnail */}
-                            </TooltipContent>
-                        </Tooltip>
-                     </FormItem>
-                   ))}
-                 </RadioGroup>
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
+                                    src={selectedPhotoPreview}
+                                    alt="已選相片預覽"
+                                    fill
+                                    objectFit="contain"
+                                 />
+                                ) : isCapturing ? (
+                                     <video ref={videoRef} className="w-full h-full object-cover" autoPlay playsInline muted />
+                                ) : (
+                                    <div className="text-center text-foreground/80 p-2">
+                                        <Upload className="mx-auto h-6 w-6 mb-1" />
+                                        <span className="text-xs">上載或影張相</span>
+                                    </div>
+                                )}
+                                {!isCapturing && <video ref={videoRef} className="absolute w-px h-px opacity-0 pointer-events-none" playsInline muted />}
+                             </div>
+                             <canvas ref={canvasRef} style={{ display: 'none' }}></canvas>
 
-         {/* User Description (Optional) */}
-         <FormField
-           control={form.control}
-           name="userDescription"
-           render={({ field }) => (
-             <FormItem className="space-y-1"> {/* Reduced space */}
-               <FormLabel className="text-base font-semibold">加啲細節（可以唔填）</FormLabel>
-               <FormControl>
-                 <Textarea
-                   placeholder="例如：戴眼鏡、微笑、揸住把扇..."
-                   className="resize-none text-sm h-16" // shorter textarea
-                   rows={2}
-                   {...field}
+                              <div className="flex gap-1.5 max-w-xs mx-auto">
+                                  {!isCapturing ? (
+                                    <>
+                                      <Button type="button" variant="outline" size="sm" className="flex-1 relative text-xs h-8 px-2">
+                                         <Upload className="mr-1 h-3.5 w-3.5" />
+                                         上載
+                                         <Input
+                                            type="file"
+                                            accept="image/*"
+                                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                                            onChange={handlePhotoChange}
+                                          />
+                                      </Button>
+                                      <Button type="button" variant="outline" size="sm" className="flex-1 text-xs h-8 px-2" onClick={startCamera}>
+                                        <Camera className="mr-1 h-3.5 w-3.5" />
+                                        影相
+                                      </Button>
+                                    </>
+                                  ) : (
+                                     <>
+                                      <Button type="button" variant="secondary" size="sm" className="flex-1 text-xs h-8 px-2" onClick={stopCamera}>
+                                        取消
+                                      </Button>
+                                      <Button type="button" variant="default" size="sm" className="flex-1 text-xs h-8 px-2" onClick={capturePhoto}>
+                                         影啦！
+                                      </Button>
+                                     </>
+                                  )}
+                               </div>
+                           </div>
+                        </div>
+                      </FormControl>
+                      <FormDescription className="text-xs text-foreground/80 px-1 pt-1">
+                        上載張清啲嘅大頭相，或者用相機即刻影返張。
+                      </FormDescription>
+                      <FormMessage className="px-1"/>
+                    </FormItem>
+                  )}
+                />
+             </AccordionContent>
+           </AccordionItem>
+
+           {/* --- Kimono Section --- */}
+           <AccordionItem value="kimono-section" disabled={!watchedPhoto}>
+             <AccordionTrigger className="text-base font-semibold hover:no-underline px-2 py-2 rounded-md hover:bg-secondary/50 data-[state=open]:bg-secondary/80 disabled:opacity-50">
+                <span className="flex items-center gap-2">
+                  <Shirt className="h-5 w-5" />
+                   步驟二：揀件和服👘
+                   {watchedKimono && <CheckCircle2 className="h-5 w-5 text-green-500" />}
+                </span>
+             </AccordionTrigger>
+             <AccordionContent className="pt-1 pb-2 px-2">
+                <FormField
+                  control={form.control}
+                  name="kimono"
+                  render={({ field }) => (
+                    <FormItem className="space-y-1">
+                      <FormDescription className="text-xs text-foreground/80 px-1">
+                        揀件和服俾你個頭像着啦。mouse hover可以放大睇㗎！
+                      </FormDescription>
+                      <FormControl>
+                        <RadioGroup
+                          onValueChange={field.onChange}
+                          defaultValue={field.value}
+                          className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-1.5 pt-1"
+                        >
+                          {kimonos.map((kimono) => (
+                            <FormItem key={kimono.id} className="relative group">
+                              <FormControl>
+                                <RadioGroupItem value={kimono.id} id={`kimono-${kimono.id}`} className="sr-only peer" />
+                              </FormControl>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <FormLabel
+                                    htmlFor={`kimono-${kimono.id}`}
+                                    className={cn(
+                                      "block cursor-pointer rounded-md border-2 border-muted bg-popover transition-all duration-200 ease-in-out overflow-hidden", // Added overflow-hidden
+                                      "hover:border-accent hover:shadow-md",
+                                      "peer-data-[state=checked]:border-primary peer-data-[state=checked]:ring-2 peer-data-[state=checked]:ring-primary/50 peer-data-[state=checked]:shadow-lg"
+                                    )}
+                                  >
+                                    <div className="aspect-square overflow-hidden rounded-t-md">
+                                      <Image
+                                        src={kimono.src}
+                                        alt={kimono.name}
+                                        width={100}
+                                        height={100}
+                                        className="h-full w-full object-cover transition-transform duration-300 ease-out group-hover:scale-110" // Enhanced zoom
+                                        data-ai-hint={kimono.dataAiHint}
+                                      />
+                                    </div>
+                                    <p className="truncate text-[10px] font-medium text-center p-0.5 bg-muted/50 rounded-b-md">{kimono.name}</p>
+                                  </FormLabel>
+                                </TooltipTrigger>
+                                <TooltipContent side="bottom" className="p-0 border-none bg-transparent shadow-xl w-[250px] h-[250px] flex items-center justify-center"> {/* Larger tooltip content */}
+                                  <Image
+                                     src={kimono.src}
+                                     alt={kimono.name}
+                                     width={250} // Larger preview size
+                                     height={250}
+                                     className="rounded-md object-cover"
+                                     data-ai-hint={kimono.dataAiHint}
+                                   />
+                                </TooltipContent>
+                              </Tooltip>
+                            </FormItem>
+                          ))}
+                        </RadioGroup>
+                      </FormControl>
+                      <FormMessage className="px-1"/>
+                    </FormItem>
+                  )}
+                />
+             </AccordionContent>
+           </AccordionItem>
+
+           {/* --- Background Section --- */}
+           <AccordionItem value="background-section" disabled={!watchedKimono}>
+             <AccordionTrigger className="text-base font-semibold hover:no-underline px-2 py-2 rounded-md hover:bg-secondary/50 data-[state=open]:bg-secondary/80 disabled:opacity-50">
+                <span className="flex items-center gap-2">
+                  <Trees className="h-5 w-5" />
+                   步驟三：揀個背景🏞️
+                   {watchedBackground && <CheckCircle2 className="h-5 w-5 text-green-500" />}
+                </span>
+             </AccordionTrigger>
+             <AccordionContent className="pt-1 pb-2 px-2">
+                 <FormField
+                  control={form.control}
+                  name="background"
+                  render={({ field }) => (
+                    <FormItem className="space-y-1">
+                      <FormDescription className="text-xs text-foreground/80 px-1">
+                         揀個背景襯托你嘅頭像。mouse hover可以放大睇㗎！
+                      </FormDescription>
+                      <FormControl>
+                         <RadioGroup
+                           onValueChange={field.onChange}
+                           defaultValue={field.value}
+                           className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-1.5 pt-1"
+                         >
+                           {backgrounds.map((bg) => (
+                             <FormItem key={bg.id} className="relative group">
+                               <FormControl>
+                                  <RadioGroupItem value={bg.id} id={`bg-${bg.id}`} className="sr-only peer" />
+                               </FormControl>
+                                <Tooltip>
+                                    <TooltipTrigger asChild>
+                                       <FormLabel
+                                         htmlFor={`bg-${bg.id}`}
+                                         className={cn(
+                                            "block cursor-pointer rounded-md border-2 border-muted bg-popover transition-all duration-200 ease-in-out overflow-hidden", // Added overflow-hidden
+                                            "hover:border-accent hover:shadow-md",
+                                            "peer-data-[state=checked]:border-primary peer-data-[state=checked]:ring-2 peer-data-[state=checked]:ring-primary/50 peer-data-[state=checked]:shadow-lg"
+                                         )}
+                                       >
+                                          <div className="aspect-[2/3] overflow-hidden rounded-t-md">
+                                              <Image
+                                               src={bg.src}
+                                               alt={bg.name}
+                                               width={100}
+                                               height={150}
+                                               className="h-full w-full object-cover transition-transform duration-300 ease-out group-hover:scale-110" // Enhanced zoom
+                                               data-ai-hint={bg.dataAiHint}
+                                              />
+                                           </div>
+                                           <p className="truncate text-[10px] font-medium text-center p-0.5 bg-muted/50 rounded-b-md">{bg.name}</p>
+                                       </FormLabel>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="bottom" className="p-0 border-none bg-transparent shadow-xl w-[200px] h-[300px] flex items-center justify-center"> {/* Larger tooltip, 2:3 ratio */}
+                                        <Image
+                                         src={bg.src}
+                                         alt={bg.name}
+                                         width={200} // Larger preview size
+                                         height={300}
+                                         className="rounded-md object-cover"
+                                         data-ai-hint={bg.dataAiHint}
+                                        />
+                                    </TooltipContent>
+                                </Tooltip>
+                             </FormItem>
+                           ))}
+                         </RadioGroup>
+                      </FormControl>
+                      <FormMessage className="px-1"/>
+                    </FormItem>
+                  )}
+                />
+             </AccordionContent>
+           </AccordionItem>
+
+           {/* --- Description Section --- */}
+           <AccordionItem value="description-section" disabled={!watchedBackground}>
+             <AccordionTrigger className="text-base font-semibold hover:no-underline px-2 py-2 rounded-md hover:bg-secondary/50 data-[state=open]:bg-secondary/80 disabled:opacity-50">
+                <span className="flex items-center gap-2">
+                  <Pencil className="h-5 w-5" />
+                   步驟四：加啲細節（可以唔填）
+                </span>
+             </AccordionTrigger>
+             <AccordionContent className="pt-1 pb-2 px-2">
+                <FormField
+                   control={form.control}
+                   name="userDescription"
+                   render={({ field }) => (
+                     <FormItem className="space-y-1">
+                       <FormControl>
+                         <Textarea
+                           placeholder="例如：戴眼鏡、微笑、揸住把扇..."
+                           className="resize-none text-sm h-16"
+                           rows={2}
+                           {...field}
+                         />
+                       </FormControl>
+                       <FormDescription className="text-xs text-foreground/80 px-1 pt-1">
+                         加少少描述，等個頭像更加獨特（最多150字）。
+                       </FormDescription>
+                       <FormMessage className="px-1"/>
+                     </FormItem>
+                   )}
                  />
-               </FormControl>
-               <FormDescription className="text-xs text-foreground/80"> {/* Changed text color */}
-                 加少少描述，等個頭像更加獨特（最多150字）。
-               </FormDescription>
-               <FormMessage />
-             </FormItem>
-           )}
-         />
+             </AccordionContent>
+           </AccordionItem>
+
+        </Accordion>
 
 
          {/* Submit Button & Progress */}
-        <div className="space-y-2 pt-2"> {/* Reduced space-y, added pt */}
-           <Button type="submit" disabled={isPending} className="w-full bg-accent hover:bg-accent/90 text-accent-foreground h-10 text-base"> {/* Slightly smaller button */}
+        <div className="space-y-1.5 pt-2 px-2">
+           <Button
+             type="submit"
+             disabled={isPending || !watchedPhoto || !watchedKimono || !watchedBackground} // Disable if steps not complete
+             className="w-full bg-accent hover:bg-accent/90 text-accent-foreground h-10 text-base"
+            >
               {isPending ? (
                 <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> {/* Smaller loader */}
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   生成緊...
                 </>
               ) : (
@@ -496,41 +536,42 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
               )}
             </Button>
             {isPending && (
-              <div className="space-y-1">
-                 <Progress value={progress} className="w-full [&>div]:bg-accent h-1.5" /> {/* Thinner progress bar */}
-                 <p className="text-xs text-center text-foreground/80">努力生成緊你嘅頭像，等等啊...</p> {/* Changed text color */}
+              <div className="space-y-0.5">
+                 <Progress value={progress} className="w-full [&>div]:bg-accent h-1.5" />
+                 <p className="text-xs text-center text-foreground/80">努力生成緊你嘅頭像，等等啊...</p>
                </div>
             )}
         </div>
 
 
         {/* Generated Image Display */}
-        {generatedImageUrl && !isPending && ( // Only show when not pending
-          <Card className="mt-4 border-accent/50"> {/* Reduced mt */}
-            <CardContent className="p-3"> {/* Reduced padding */}
-               <Alert variant="default" className="mb-2 border-accent bg-accent/10 p-3"> {/* Reduced margin/padding */}
+        {generatedImageUrl && !isPending && (
+          <Card className="mt-3 mx-2 border-accent/50">
+            <CardContent className="p-2">
+               <Alert variant="default" className="mb-1.5 border-accent bg-accent/10 p-2">
                   <Sparkles className="h-4 w-4 text-accent" />
-                  <AlertTitle className="text-accent font-semibold text-sm">搞掂！✨</AlertTitle> {/* Smaller title */}
-                  <AlertDescription className="text-xs text-foreground/80"> {/* Changed text color */}
+                  <AlertTitle className="text-accent font-semibold text-sm">搞掂！✨</AlertTitle>
+                  <AlertDescription className="text-xs text-foreground/80">
                     你嘅靚靚櫻花頭像整好喇！右掣或者長按就可以儲存。
                   </AlertDescription>
                 </Alert>
-              <div className="aspect-square relative w-full max-w-sm mx-auto rounded-lg overflow-hidden shadow-md"> {/* Slightly smaller max-w */}
+              <div className="aspect-square relative w-full max-w-[300px] mx-auto rounded-lg overflow-hidden shadow-md"> {/* Even smaller max-w */}
                 <Image
                   src={generatedImageUrl}
                   alt="生成嘅頭像"
-                  fill // Use fill instead of layout="fill"
+                  fill
                   objectFit="cover"
                   data-ai-hint="generated avatar portrait"
                 />
               </div>
                <Button
                     variant="outline"
-                    className="w-full mt-3 text-sm h-9" // Reduced mt
+                    size="sm" // Smaller button
+                    className="w-full mt-2 text-sm h-9"
                     onClick={() => {
-                        setGeneratedImageUrl(null); // Clear image
-                        form.reset(); // Reset form
-                        setSelectedPhotoPreview(null); // Clear preview
+                        setGeneratedImageUrl(null);
+                        form.reset();
+                        setSelectedPhotoPreview(null);
                      }}
                     >
                     再整一個！

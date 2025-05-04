@@ -14,7 +14,8 @@ const AccordionItem = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <AccordionPrimitive.Item
     ref={ref}
-    className={cn("border-b", className)}
+    // Removed border-b for potentially tighter spacing if desired, add back if needed
+    className={cn("border-b", className)} // Kept border for now
     {...props}
   />
 ))
@@ -28,7 +29,7 @@ const AccordionTrigger = React.forwardRef<
     <AccordionPrimitive.Trigger
       ref={ref}
       className={cn(
-        "flex flex-1 items-center justify-between py-4 font-medium transition-all hover:underline [&[data-state=open]>svg]:rotate-180",
+        "flex flex-1 items-center justify-between py-2 px-3 font-medium transition-all hover:underline [&[data-state=open]>svg]:rotate-180 disabled:cursor-not-allowed disabled:opacity-50", // Reduced padding py-2 px-3
         className
       )}
       {...props}
@@ -49,7 +50,8 @@ const AccordionContent = React.forwardRef<
     className="overflow-hidden text-sm transition-all data-[state=closed]:animate-accordion-up data-[state=open]:animate-accordion-down"
     {...props}
   >
-    <div className={cn("pb-4 pt-0", className)}>{children}</div>
+    {/* Reduced padding pb-2 pt-1 */}
+    <div className={cn("pb-2 pt-1", className)}>{children}</div>
   </AccordionPrimitive.Content>
 ))
 
