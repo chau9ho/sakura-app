@@ -64,7 +64,8 @@ const PhotoSelectionSection: React.FC<PhotoSelectionSectionProps> = ({
   disabled = false,
   hasCameraPermission, // Destructure the new prop
 }) => {
-  const showVideo = isCapturing && hasCameraPermission;
+  // Determine what to show in the preview area
+  const showVideo = isCapturing && hasCameraPermission === true;
   const showPreview = selectedPhotoPreview && !isCapturing;
   const showPlaceholder = !showVideo && !showPreview;
 
@@ -95,7 +96,7 @@ const PhotoSelectionSection: React.FC<PhotoSelectionSectionProps> = ({
                           ref={videoRef}
                           className={cn(
                             "w-full h-full object-cover",
-                            // Explicitly show when capturing and permission is granted
+                            // Explicitly show when capturing and permission is granted, otherwise hide
                             showVideo ? "block" : "hidden"
                           )}
                           autoPlay
@@ -199,7 +200,7 @@ const PhotoSelectionSection: React.FC<PhotoSelectionSectionProps> = ({
                               size="sm"
                               className="flex-1 text-xs h-8 px-2"
                               onClick={capturePhoto}
-                              disabled={hasCameraPermission === false} // Disable capture if no permission
+                              disabled={hasCameraPermission !== true} // Disable capture if permission not granted or undetermined
                             >
                               影啦！
                             </Button>
@@ -221,7 +222,7 @@ const PhotoSelectionSection: React.FC<PhotoSelectionSectionProps> = ({
                       </div>
                       <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 gap-1.5">
                         {/* Show skeletons ONLY when fetching is triggered by user */}
-                        {isFetchingPhotos && fetchedPhotos.length === 0 ? (
+                        {isFetchingPhotos ? (
                           Array.from({ length: 4 }).map((_, idx) => (
                             <Skeleton key={`skel-${idx}`} className="aspect-square rounded-md bg-muted/50" />
                           ))
