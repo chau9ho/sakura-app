@@ -1,3 +1,4 @@
+
 // src/services/comfyui-service.ts
 'use server';
 
@@ -59,10 +60,12 @@ export async function uploadImageToComfyUI(
     const response = await fetch(`${COMFYUI_SERVER_ADDRESS}/upload/image`, {
       method: 'POST',
       body: formData,
+      // Add cache control to prevent unexpected caching issues
+      cache: 'no-store',
     });
 
     if (!response.ok) {
-      const errorText = await response.text();
+      const errorText = await response.text(); // Capture the error response
       console.error(`ComfyUI Upload Error (${response.status}): ${errorText}`);
       throw new Error(`Failed to upload image to ComfyUI: ${response.statusText} - ${errorText}`);
     }
@@ -71,8 +74,17 @@ export async function uploadImageToComfyUI(
     console.log('ComfyUI Upload Success:', result);
     return result; // Contains name, subfolder, type
   } catch (error) {
-    console.error('Error during ComfyUI upload fetch:', error);
+    console.error('Error during ComfyUI upload fetch:', error); // Log the detailed error
+    if (error instanceof Error && error.stack) {
+      console.error('Stack Trace:', error.stack); // Log the stack trace if available
+    } else {
+      console.error('Non-Error object caught:', error); // Handle non-Error objects
+    }
     if (error instanceof Error) {
+        // Check for specific fetch errors like ECONNREFUSED
+        if ((error as any).cause?.code === 'ECONNREFUSED') {
+             throw new Error(`Network connection refused during ComfyUI upload. Is the server running at ${COMFYUI_SERVER_ADDRESS}?`);
+        }
         throw new Error(`Network or fetch error during ComfyUI upload: ${error.message}`);
     }
     throw new Error('An unknown error occurred during ComfyUI upload.');
@@ -97,6 +109,7 @@ export async function queuePrompt(promptWorkflow: object): Promise<QueuePromptRe
         'Content-Type': 'application/json',
       },
       body: body,
+      cache: 'no-store',
     });
 
     if (!response.ok) {
@@ -115,6 +128,9 @@ export async function queuePrompt(promptWorkflow: object): Promise<QueuePromptRe
   } catch (error) {
     console.error('Error during ComfyUI queue prompt fetch:', error);
      if (error instanceof Error) {
+        if ((error as any).cause?.code === 'ECONNREFUSED') {
+             throw new Error(`Network connection refused during ComfyUI queue prompt. Is the server running at ${COMFYUI_SERVER_ADDRESS}?`);
+        }
         throw new Error(`Network or fetch error during ComfyUI queue prompt: ${error.message}`);
     }
     throw new Error('An unknown error occurred during ComfyUI queue prompt.');
@@ -128,7 +144,7 @@ export async function queuePrompt(promptWorkflow: object): Promise<QueuePromptRe
  */
 export async function getHistory(promptId: string): Promise<ComfyUIHistory> {
   try {
-    const response = await fetch(`${COMFYUI_SERVER_ADDRESS}/history/${promptId}`);
+    const response = await fetch(`${COMFYUI_SERVER_ADDRESS}/history/${promptId}`, { cache: 'no-store' });
     if (!response.ok) {
       const errorText = await response.text();
       console.error(`ComfyUI Get History Error (${response.status}): ${errorText}`);
@@ -139,6 +155,9 @@ export async function getHistory(promptId: string): Promise<ComfyUIHistory> {
   } catch (error) {
      console.error(`Error fetching history for prompt ${promptId}:`, error);
      if (error instanceof Error) {
+        if ((error as any).cause?.code === 'ECONNREFUSED') {
+            throw new Error(`Network connection refused getting ComfyUI history. Is the server running at ${COMFYUI_SERVER_ADDRESS}?`);
+        }
         throw new Error(`Network or fetch error getting ComfyUI history: ${error.message}`);
     }
     throw new Error(`An unknown error occurred getting ComfyUI history for prompt ${promptId}.`);
@@ -160,7 +179,7 @@ export async function getImage(filename: string, subfolder: string, type: 'outpu
   });
 
   try {
-    const response = await fetch(`${COMFYUI_SERVER_ADDRESS}/view?${params.toString()}`);
+    const response = await fetch(`${COMFYUI_SERVER_ADDRESS}/view?${params.toString()}`, { cache: 'no-store' });
     if (!response.ok) {
        const errorText = await response.text();
        console.error(`ComfyUI Get Image Error (${response.status}): ${errorText}`);
@@ -171,6 +190,9 @@ export async function getImage(filename: string, subfolder: string, type: 'outpu
   } catch (error) {
       console.error(`Error fetching image ${filename} from ComfyUI:`, error);
       if (error instanceof Error) {
+        if ((error as any).cause?.code === 'ECONNREFUSED') {
+             throw new Error(`Network connection refused getting ComfyUI image. Is the server running at ${COMFYUI_SERVER_ADDRESS}?`);
+        }
         throw new Error(`Network or fetch error getting ComfyUI image: ${error.message}`);
       }
       throw new Error(`An unknown error occurred getting ComfyUI image ${filename}.`);
@@ -197,8 +219,12 @@ export async function fetchUrlAsFile(url: string, filename: string, type: string
     } catch (error) {
         console.error(`Error in fetchUrlAsFile for ${url}:`, error);
         if (error instanceof Error) {
+             if ((error as any).cause?.code === 'ECONNREFUSED') {
+                 throw new Error(`Network connection refused fetching file from ${url}.`);
+             }
              throw new Error(`Failed to fetch file from ${url}: ${error.message}`);
         }
          throw new Error(`An unknown error occurred while fetching file from ${url}.`);
     }
 }
+
