@@ -63,6 +63,7 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
   const [activeAccordionItem, setActiveAccordionItem] = useState<string>("username-section");
   const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const [hasCameraPermission, setHasCameraPermission] = useState<boolean | null>(null); // Track camera permission
+  const [stream, setStream] = useState<MediaStream | null>(null); // Store the stream
 
 
   const form = useForm<AvatarFormValues>({
@@ -95,15 +96,13 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
         // Only advance if the current step is valid
         const fieldName = currentStep.split('-')[0] as keyof AvatarFormValues;
         // Check error specifically for the field associated with the current step
-        if (fieldName && !form.formState.errors[fieldName]) {
-           setActiveAccordionItem(steps[currentIndex + 1]);
-        } else if (!fieldName && currentStep === 'username-section') { // Handle username specific check
-            if (!form.formState.errors.username) {
-                setActiveAccordionItem(steps[currentIndex + 1]);
-            }
+        // Use form.getFieldState to get the error status reliably
+        const fieldState = form.getFieldState(fieldName || 'username');
+        if (!fieldState.error) {
+             setActiveAccordionItem(steps[currentIndex + 1]);
         }
     }
-   }, [form.formState.errors]); // Dependency on errors to re-evaluate ability to move
+   }, [form]); // Dependency on form
 
 
    // --- Progress Simulation ---
@@ -145,40 +144,29 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
         setProgress(0);
    };
 
-   // Clear interval on unmount
-    useEffect(() => {
-        return () => {
-        if (progressIntervalRef.current) {
-            clearInterval(progressIntervalRef.current);
-        }
-        };
-    }, []);
-
-
    // --- Camera Control Functions ---
 
-   // Stop camera stream
+   // Stop camera stream - make it stable
    const stopCamera = useCallback(() => {
-     if (videoRef.current && videoRef.current.srcObject) {
-         try {
-             const stream = videoRef.current.srcObject as MediaStream;
-             stream.getTracks().forEach(track => track.stop());
-             videoRef.current.srcObject = null;
-             console.log("Camera stream stopped.");
-          } catch (error) {
-             console.error("Error stopping camera stream:", error);
-          }
-      }
-      // Only set isCapturing false if it was true
-      if (isCapturing) {
-          setIsCapturing(false);
-      }
-  }, [isCapturing]); // Depends on isCapturing state
+     console.log("Attempting to stop camera stream..."); // Debug log
+     if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+        console.log("MediaStream tracks stopped.");
+        setStream(null); // Clear the stream state
+     }
+     if (videoRef.current) {
+        videoRef.current.srcObject = null; // Ensure video src is cleared
+        console.log("Video element srcObject cleared.");
+     }
+      setIsCapturing(false); // Always set capturing to false when stopping
+      console.log("Set isCapturing to false.");
+  }, [stream]); // Depend only on the stream state itself
 
 
   // Handle photo selection (from file upload, camera, or fetched photos)
   const handlePhotoSelection = useCallback((source: 'file' | 'camera' | 'fetched', data: File | string | ImageOption) => {
-    if (source !== 'camera') { // Only stop camera if not selecting a camera shot
+    // Don't stop camera if the source is 'camera', it will be stopped after capture
+    if (source !== 'camera') {
        stopCamera();
     }
     setSelectedFetchedPhotoId(null); // Clear selection from fetched list
@@ -188,39 +176,32 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
     let previewUrl: string | null = null;
     let fetchedId: string | null = null;
 
+    // Revoke previous blob URL if it exists
+    if (selectedPhotoPreview && selectedPhotoPreview.startsWith('blob:')) {
+        URL.revokeObjectURL(selectedPhotoPreview);
+    }
+
     if (source === 'file' && data instanceof File) {
         photoValue = data;
         previewUrl = URL.createObjectURL(data); // Use createObjectURL for immediate preview
-        // Revoke previous URL if exists
-        if (selectedPhotoPreview && selectedPhotoPreview.startsWith('blob:')) {
-            URL.revokeObjectURL(selectedPhotoPreview);
-        }
     } else if (source === 'camera' && typeof data === 'string') {
         photoValue = data; // data is dataUrl
         previewUrl = data;
-        // Revoke previous blob URL if exists
-        if (selectedPhotoPreview && selectedPhotoPreview.startsWith('blob:')) {
-             URL.revokeObjectURL(selectedPhotoPreview);
-        }
     } else if (source === 'fetched' && typeof data !== 'string' && !(data instanceof File)) {
         photoValue = data.src; // Use the URL as the value
         previewUrl = data.src;
         fetchedId = data.id;
-        // Revoke previous blob URL if exists
-        if (selectedPhotoPreview && selectedPhotoPreview.startsWith('blob:')) {
-             URL.revokeObjectURL(selectedPhotoPreview);
-        }
     }
 
     form.setValue("photo", photoValue, { shouldValidate: true });
     setSelectedPhotoPreview(previewUrl);
     setSelectedFetchedPhotoId(fetchedId);
 
-    // Manually advance after valid selection
+    // Manually trigger validation and advance after valid selection
     form.trigger("photo").then(isValid => {
         if (isValid) {
-             // Add a slight delay to allow preview update
-             setTimeout(() => nextStep("photo-section"), 100);
+             // Add a slight delay to allow preview update before moving
+             setTimeout(() => nextStep("photo-section"), 150);
         }
     });
 
@@ -230,60 +211,80 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
   // Start camera capture
   const startCamera = useCallback(async () => {
     console.log("Attempting to start camera...");
-    stopCamera(); // Ensure any existing stream is stopped first
+    if (isCapturing || stream) {
+        console.log("Camera already running or starting, stopping first.");
+        stopCamera(); // Ensure any existing stream is stopped first
+        // Add a small delay to ensure resources are released
+        await new Promise(resolve => setTimeout(resolve, 100));
+    }
+
     setSelectedPhotoPreview(null); // Clear preview
     form.setValue("photo", undefined, { shouldValidate: false }); // Clear photo value without immediate validation
     setSelectedFetchedPhotoId(null);
     setHasCameraPermission(null); // Reset permission status
 
     try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
+        const newStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
+        setStream(newStream); // Store the stream in state
         setHasCameraPermission(true);
         console.log("Camera permission granted.");
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          // Wait for video metadata to load to get dimensions
-          videoRef.current.onloadedmetadata = async () => {
-             try {
-                await videoRef.current?.play();
-                setIsCapturing(true); // Set capturing true only after successful stream setup
-                console.log("Camera stream started and playing.");
-             } catch (playError) {
-                 console.error("Error playing video stream:", playError);
-                 setHasCameraPermission(false);
-                 toast({ title: "相機錯誤", description: "無法播放相機影像。", variant: "destructive" });
-                 stopCamera();
-             }
-          };
-          videoRef.current.onerror = (e) => {
-              console.error("Video element error:", e);
-              setHasCameraPermission(false);
-              toast({ title: "相機錯誤", description: "相機影像載入失敗。", variant: "destructive" });
-              stopCamera();
-          };
 
+        if (videoRef.current) {
+          videoRef.current.srcObject = newStream;
+          // Use a promise to wait for video to be ready
+          await new Promise<void>((resolve, reject) => {
+              if (!videoRef.current) {
+                  reject("Video ref became null");
+                  return;
+              }
+              videoRef.current.onloadedmetadata = async () => {
+                  try {
+                      if (videoRef.current) { // Check ref again inside async callback
+                        await videoRef.current.play();
+                        console.log("Camera stream started and playing.");
+                        setIsCapturing(true); // Set capturing true only after successful play
+                        resolve();
+                      } else {
+                          reject("Video ref became null before playing");
+                      }
+                  } catch (playError) {
+                      console.error("Error playing video stream:", playError);
+                      reject(playError);
+                  }
+              };
+               videoRef.current.onerror = (e) => {
+                  console.error("Video element error:", e);
+                  reject(e);
+               };
+          });
         } else {
-            console.warn("Video ref not available.");
-             stream.getTracks().forEach(track => track.stop()); // Stop stream if ref is missing
-             setHasCameraPermission(false); // Indicate failure
+            console.warn("Video ref not available after getting stream.");
+            newStream.getTracks().forEach(track => track.stop()); // Stop stream if ref is missing
+            setStream(null);
+            throw new Error("Video element reference is missing.");
         }
-      } catch (err) {
-        console.error("Error accessing camera: ", err);
+      } catch (err: any) {
+        console.error("Error accessing or starting camera: ", err);
         setHasCameraPermission(false);
         toast({
           title: "相機錯誤",
-          description: "開唔到相機，請檢查你嘅瀏覽器設定有冇俾權限。",
+          description: `開唔到相機: ${err.message || '請檢查你嘅瀏覽器設定有冇俾權限。'}`,
           variant: "destructive",
         });
         setIsCapturing(false);
+        stopCamera(); // Ensure cleanup if error occurs
       }
-  }, [form, toast, stopCamera]); // Added stopCamera dependency
+  }, [form, toast, stopCamera, isCapturing, stream]); // Added isCapturing and stream
 
 
   // Capture photo from video stream
   const capturePhoto = useCallback(() => {
     console.log("Attempting to capture photo...");
-    if (videoRef.current && canvasRef.current && isCapturing) {
+    if (!isCapturing) {
+        console.warn("Capture called when not capturing.");
+        return;
+    }
+    if (videoRef.current && canvasRef.current) {
       const context = canvasRef.current.getContext('2d');
       const video = videoRef.current;
 
@@ -316,12 +317,14 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
             console.log("Photo drawn to canvas (mirrored).");
 
             const dataUrl = canvasRef.current.toDataURL('image/png'); // Use PNG for consistency
+
+            // Stop the camera *before* updating the state
+            stopCamera();
+
+            // Now handle the selection, which also updates the preview
             handlePhotoSelection('camera', dataUrl); // Pass dataUrl to handler
-            // handlePhotoSelection now calls stopCamera
             console.log("Photo captured successfully (as data URL).");
 
-            // Explicitly stop camera after successful capture
-             stopCamera(); // Already called within handlePhotoSelection indirectly
 
         } catch (drawError) {
              console.error("Error drawing image to canvas:", drawError);
@@ -329,14 +332,16 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
              stopCamera(); // Stop camera on failure
         }
       } else {
-         console.error("Capture failed: Video not ready or context unavailable.", { readyState: video.readyState, width: video.videoWidth, height: video.videoHeight });
+         // Log more details
+         console.error("Capture failed: Video not ready or context unavailable.", { readyState: video.readyState, width: video.videoWidth, height: video.videoHeight, contextExists: !!context });
          toast({ title: "影相失敗", description: "未能成功影相，請再試一次或檢查相機連接。", variant: "destructive" });
          stopCamera(); // Stop camera on failure
       }
     } else {
-        console.warn("CapturePhoto called but not ready:", { isCapturing, video: !!videoRef.current, canvas: !!canvasRef.current });
+        console.warn("CapturePhoto called but video or canvas ref is missing:", { isCapturing, videoRefExists: !!videoRef.current, canvasRefExists: !!canvasRef.current });
+        stopCamera(); // Attempt to stop camera if refs are missing unexpectedly
     }
-  }, [isCapturing, handlePhotoSelection, toast, stopCamera]); // Add stopCamera dependency
+  }, [isCapturing, handlePhotoSelection, toast, stopCamera]); // stopCamera is stable now
 
 
    // --- Photo Fetching Logic ---
@@ -344,74 +349,84 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
     if (!username) return;
     console.log(`Fetching photos for user: ${username}`);
     let showFetchingIndicator = isUserTriggered; // Only show spinner if user clicked refresh
-    startFetchingPhotosTransition(async () => {
-        // Don't clear photos immediately if not user triggered to avoid flicker
-        if (showFetchingIndicator) {
-             setFetchedPhotos([]); // Clear only when user explicitly refreshes
-        }
 
-        const result = await fetchPhotosAction(username);
+    // Only start transition (show spinner) if user triggered
+    const fetchLogic = async () => {
+      if (showFetchingIndicator) {
+          setFetchedPhotos([]); // Clear only when user explicitly refreshes
+      }
 
-        if (result.success) {
-            setFetchedPhotos(result.photos);
-            console.log(`Fetched ${result.photos.length} photos.`);
-            if (result.photos.length > 0) {
-                 if (showFetchingIndicator) { // Only toast if user explicitly refreshed
-                    toast({
-                        title: "圖片已載入",
-                        description: `搵到 ${result.photos.length} 張 ${username} 嘅相。`,
-                    });
-                 }
-                 // Auto-select the first photo if none is currently selected
-                 const currentPhotoValue = form.getValues("photo");
-                 if (!currentPhotoValue && result.photos[0]) {
-                    console.log("Auto-selecting first fetched photo.");
-                    handlePhotoSelection('fetched', result.photos[0]);
-                 }
-            } else {
-                 // Only show "not found" toast if the fetch was triggered by the user explicitly
-                 if (showFetchingIndicator) {
-                    toast({
-                        title: "未搵到圖片",
-                        description: `暫時未搵到 ${username} 嘅相。試下用QR code上載？`,
-                        variant: "default", // Use default variant, not destructive
-                        duration: 3000, // Shorter duration
-                    });
-                 }
-                 // Clear selection if fetch succeeds with 0 photos AND no photo was selected before
-                 const currentPhotoValue = form.getValues("photo");
-                 if (!currentPhotoValue) {
-                     setSelectedFetchedPhotoId(null);
-                     form.setValue("photo", undefined, { shouldValidate: false });
-                     setSelectedPhotoPreview(null);
-                 }
-            }
-        } else {
-            console.error("Error fetching user photos:", result.error);
-            // Always show error toast, regardless of trigger
-            toast({
-                title: "載入圖片失敗",
-                description: result.error || "嘗試載入用戶圖片時發生錯誤。",
-                variant: "destructive",
-            });
-             setFetchedPhotos([]); // Clear photos on error
-             // Clear selection if no photo was selected before the error
-             const currentPhotoValue = form.getValues("photo");
-             if (!currentPhotoValue) {
-                setSelectedFetchedPhotoId(null);
-                form.setValue("photo", undefined, { shouldValidate: false });
-                setSelectedPhotoPreview(null);
-            }
-        }
-    });
-  }, [toast, form, handlePhotoSelection]); // Dependencies for fetchUserPhotos
+      const result = await fetchPhotosAction(username);
+
+      if (result.success) {
+          setFetchedPhotos(result.photos);
+          console.log(`Fetched ${result.photos.length} photos.`);
+          if (result.photos.length > 0) {
+              if (showFetchingIndicator) { // Only toast if user explicitly refreshed
+                  toast({
+                      title: "圖片已載入",
+                      description: `搵到 ${result.photos.length} 張 ${username} 嘅相。`,
+                  });
+              }
+              // Auto-select the first photo if none is currently selected
+              const currentPhotoValue = form.getValues("photo");
+              if (!currentPhotoValue && result.photos[0]) {
+                  console.log("Auto-selecting first fetched photo.");
+                  handlePhotoSelection('fetched', result.photos[0]);
+              }
+          } else {
+              // Only show "not found" toast if the fetch was triggered by the user explicitly
+              if (showFetchingIndicator) {
+                  toast({
+                      title: "未搵到圖片",
+                      description: `暫時未搵到 ${username} 嘅相。試下用QR code上載？`,
+                      variant: "default", // Use default variant, not destructive
+                      duration: 3000, // Shorter duration
+                  });
+              }
+              // Clear selection if fetch succeeds with 0 photos AND no photo was selected before
+              const currentPhotoValue = form.getValues("photo");
+              if (!currentPhotoValue) {
+                  setSelectedFetchedPhotoId(null);
+                  form.setValue("photo", undefined, { shouldValidate: false });
+                  setSelectedPhotoPreview(null);
+              }
+          }
+      } else {
+          console.error("Error fetching user photos:", result.error);
+          // Always show error toast, regardless of trigger
+          toast({
+              title: "載入圖片失敗",
+              description: result.error || "嘗試載入用戶圖片時發生錯誤。",
+              variant: "destructive",
+          });
+           setFetchedPhotos([]); // Clear photos on error
+           // Clear selection if no photo was selected before the error
+           const currentPhotoValue = form.getValues("photo");
+           if (!currentPhotoValue) {
+              setSelectedFetchedPhotoId(null);
+              form.setValue("photo", undefined, { shouldValidate: false });
+              setSelectedPhotoPreview(null);
+          }
+      }
+    };
+
+    if (showFetchingIndicator) {
+        startFetchingPhotosTransition(fetchLogic);
+    } else {
+        fetchLogic(); // Run directly without transition if not user triggered
+    }
+
+  }, [toast, form, handlePhotoSelection, startFetchingPhotosTransition]); // Added startFetchingPhotosTransition
 
 
   // Cleanup camera on component unmount
   useEffect(() => {
+    // This function reference should be stable now
+    const cleanup = stopCamera;
     return () => {
-      console.log("AvatarGenerationForm unmounting, stopping camera.");
-      stopCamera();
+      console.log("AvatarGenerationForm unmounting, running cleanup (stopCamera).");
+      cleanup();
        if (progressIntervalRef.current) {
             clearInterval(progressIntervalRef.current);
        }
@@ -420,24 +435,26 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
             URL.revokeObjectURL(selectedPhotoPreview);
         }
     };
-  }, [stopCamera, selectedPhotoPreview]); // Dependencies for cleanup
+    // Rely only on stopCamera, which itself depends on `stream`.
+    // This prevents the effect from re-running unnecessarily.
+  }, [stopCamera, selectedPhotoPreview]);
+
 
   // Auto-fetch photos when username changes (debounced)
-  // **Crucially, remove fetchUserPhotos and form from the dependency array**
-  // to prevent it running on every render due to function identity changes.
-  // We only want it to run when watchedUsername actually changes.
-   useEffect(() => {
+  useEffect(() => {
        const handler = setTimeout(() => {
             const currentUsername = form.getValues("username");
+            // Fetch only if username is valid and has actually changed (or on initial load with username)
             if (watchedUsername && watchedUsername === currentUsername && currentUsername.length > 0) {
                  console.log(`Debounced: Fetching photos for ${watchedUsername}`);
-                 // Initial fetch is not user triggered
-                 fetchUserPhotos(watchedUsername, false);
+                 fetchUserPhotos(watchedUsername, false); // Initial fetch is not user triggered
             } else if (!watchedUsername && !currentUsername) {
+                 // Clear photos if username becomes empty
                  console.log("Debounced: Clearing fetched photos as username is empty.");
                  setFetchedPhotos([]);
                  setSelectedFetchedPhotoId(null);
                  const currentPhotoValue = form.getValues("photo");
+                 // Clear selected photo only if it was a fetched one
                  if (typeof currentPhotoValue === 'string' && currentPhotoValue.startsWith('http')) {
                      form.setValue("photo", undefined, { shouldValidate: false });
                      setSelectedPhotoPreview(null);
@@ -449,7 +466,7 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
            clearTimeout(handler);
        };
    // eslint-disable-next-line react-hooks/exhaustive-deps
-   }, [watchedUsername]); // ONLY depend on watchedUsername
+   }, [watchedUsername, fetchUserPhotos]); // fetchUserPhotos is stable
 
 
   // Handle form submission
@@ -526,13 +543,13 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
 
   const handleReset = useCallback(() => {
     console.log("Resetting form...");
-    stopCamera();
+    stopCamera(); // Ensure camera is stopped
     setGeneratedImageUrl(null);
     setGeneratedPromptText(null);
     resetProgress();
     const currentUsername = form.getValues("username");
     form.reset({
-      username: currentUsername,
+      username: currentUsername, // Keep username
       photo: undefined,
       kimono: "",
       background: "",
@@ -546,16 +563,16 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
     setSelectedPhotoPreview(null);
     setSelectedFetchedPhotoId(null);
 
+     // Re-fetch photos for the current user if username exists
      if (currentUsername) {
-        // Fetch photos on reset, treat as non-user triggered initially
-        fetchUserPhotos(currentUsername, false);
+        fetchUserPhotos(currentUsername, false); // Non-user triggered fetch
      } else {
-        setFetchedPhotos([]);
+        setFetchedPhotos([]); // Clear if no username
      }
 
-    setActiveAccordionItem('username-section');
+    setActiveAccordionItem('username-section'); // Go back to first step
     setHasCameraPermission(null); // Reset camera permission status
-  }, [form, fetchUserPhotos, stopCamera, selectedPhotoPreview]);
+  }, [form, fetchUserPhotos, stopCamera, selectedPhotoPreview]); // Dependencies are stable
 
 
   return (
@@ -596,8 +613,9 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
                  const file = e.target.files?.[0];
                  if (file) {
                      console.log("File selected:", file.name, file.size, file.type);
-                     e.target.value = ''; // Reset file input
+                     // Pass the file to the handler
                      handlePhotoSelection('file', file);
+                     e.target.value = ''; // Reset file input after selection is handled
                  }
               }}
               startCamera={startCamera}
@@ -620,7 +638,7 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
               icon={<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-shirt"><path d="M20.38 3.46 16 2a4 4 0 0 1-8 0L3.62 3.46a2 2 0 0 0-1.34 2.23l.58 3.47a1 1 0 0 0 .99.84H6v10c0 1.1.9 2 2 2h8a2 2 0 0 0 2-2V10h2.15a1 1 0 0 0 .99-.84l.58-3.47a2 2 0 0 0-1.34-2.23z"/></svg>}
               sectionId="kimono-section"
               onSelectionChange={() => form.trigger("kimono").then(isValid => isValid && setTimeout(() => nextStep("kimono-section"), 100))}
-              disabled={!watchedPhoto || !!form.formState.errors.photo || isPending} // Disable if no valid photo or pending
+              disabled={!watchedPhoto || !!form.getFieldState("photo").error || isPending} // Disable if no valid photo or pending
             />
 
             {/* --- Background Section --- */}
@@ -635,7 +653,7 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
               icon={<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-trees"><path d="M10 10v.2A3 3 0 0 1 7.1 13H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h2.9a3 3 0 0 1 2.9 2.8V10z"/><path d="M7 14v.2A3 3 0 0 0 9.9 17H14a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-2.9a3 3 0 0 0-2.9 2.8V14z"/><path d="M17 14v.2A3 3 0 0 1 14.1 17H10a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h2.9a3 3 0 0 1 2.9 2.8V14z"/></svg>}
               sectionId="background-section"
               onSelectionChange={() => form.trigger("background").then(isValid => isValid && setTimeout(() => nextStep("background-section"), 100))}
-              disabled={!watchedKimono || !!form.formState.errors.kimono || isPending} // Disable if no valid kimono or pending
+              disabled={!watchedKimono || !!form.getFieldState("kimono").error || isPending} // Disable if no valid kimono or pending
             />
 
             {/* --- Description Section --- */}
@@ -643,7 +661,7 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
               form={form}
               value={watchedUserDescription}
               onValueChange={(value) => form.setValue('userDescription', value, { shouldValidate: true })} // Ensure value updates RHF
-              disabled={!watchedBackground || !!form.formState.errors.background || isPending} // Disable if no valid background or pending
+              disabled={!watchedBackground || !!form.getFieldState("background").error || isPending} // Disable if no valid background or pending
             />
 
           </Accordion>
@@ -690,4 +708,5 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
     </TooltipProvider>
   );
 }
+
 
