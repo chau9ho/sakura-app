@@ -1,0 +1,517 @@
+{
+  "1": {
+    "inputs": {
+      "vae_name": "ae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "加载VAE"
+    }
+  },
+  "3": {
+    "inputs": {
+      "guidance": 3.5,
+      "conditioning": [
+        "9",
+        0
+      ]
+    },
+    "class_type": "FluxGuidance",
+    "_meta": {
+      "title": "Flux引导"
+    }
+  },
+  "4": {
+    "inputs": {
+      "width": [
+        "49",
+        1
+      ],
+      "height": [
+        "49",
+        2
+      ],
+      "batch_size": 1
+    },
+    "class_type": "EmptySD3LatentImage",
+    "_meta": {
+      "title": "空Latent图像（SD3）"
+    }
+  },
+  "5": {
+    "inputs": {
+      "max_shift": 0.7500000000000001,
+      "base_shift": 0.5,
+      "width": [
+        "49",
+        1
+      ],
+      "height": [
+        "49",
+        2
+      ],
+      "model": [
+        "98",
+        0
+      ]
+    },
+    "class_type": "ModelSamplingFlux",
+    "_meta": {
+      "title": "采样算法（Flux）"
+    }
+  },
+  "9": {
+    "inputs": {
+      "text": "PLACEHOLDER_PROMPT",
+      "speak_and_recognation": {
+        "__value__": [
+          false,
+          true
+        ]
+      },
+      "clip": [
+        "36",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Positive Prompt)"
+    }
+  },
+  "10": {
+    "inputs": {
+      "conditioning": [
+        "9",
+        0
+      ]
+    },
+    "class_type": "ConditioningZeroOut",
+    "_meta": {
+      "title": "条件零化"
+    }
+  },
+  "16": {
+    "inputs": {
+      "seed": [
+        "99",
+        0
+      ],
+      "steps": 8,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1,
+      "model": [
+        "94",
+        0
+      ],
+      "positive": [
+        "40",
+        0
+      ],
+      "negative": [
+        "10",
+        0
+      ],
+      "latent_image": [
+        "4",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "K采样器"
+    }
+  },
+  "17": {
+    "inputs": {
+      "samples": [
+        "16",
+        0
+      ],
+      "vae": [
+        "1",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE解码"
+    }
+  },
+  "34": {
+    "inputs": {
+      "model_path": "svdq-int4-flux.1-dev",
+      "cache_threshold": 0,
+      "attention": "nunchaku-fp16",
+      "cpu_offload": "auto",
+      "device_id": 0,
+      "data_type": "float16",
+      "i2f_mode": "enabled"
+    },
+    "class_type": "NunchakuFluxDiTLoader",
+    "_meta": {
+      "title": "Nunchaku FLUX DiT Loader"
+    }
+  },
+  "36": {
+    "inputs": {
+      "model_type": "flux",
+      "text_encoder1": "clip_l.safetensors",
+      "text_encoder2": "t5xxl_fp8_e4m3fn.safetensors",
+      "t5_min_length": 512,
+      "use_4bit_t5": "disable",
+      "int4_model": "none"
+    },
+    "class_type": "NunchakuTextEncoderLoader",
+    "_meta": {
+      "title": "Nunchaku Text Encoder Loader"
+    }
+  },
+  "39": {
+    "inputs": {
+      "image": "PLACEHOLDER_KIMONO.jpg"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Load Kimono Image"
+    }
+  },
+  "40": {
+    "inputs": {
+      "downsampling_factor": 1,
+      "downsampling_function": "nearest-exact",
+      "mode": "autocrop with mask",
+      "weight": 1,
+      "autocrop_margin": 0.1,
+      "conditioning": [
+        "3",
+        0
+      ],
+      "style_model": [
+        "41",
+        0
+      ],
+      "clip_vision": [
+        "42",
+        0
+      ],
+      "image": [
+        "49",
+        0
+      ],
+      "mask": [
+        "61",
+        0
+      ]
+    },
+    "class_type": "ReduxAdvanced",
+    "_meta": {
+      "title": "ReduxAdvanced"
+    }
+  },
+  "41": {
+    "inputs": {
+      "style_model_name": "flux1-redux-dev.safetensors"
+    },
+    "class_type": "StyleModelLoader",
+    "_meta": {
+      "title": "加载风格模型"
+    }
+  },
+  "42": {
+    "inputs": {
+      "clip_name": "sigclip_vision_patch14_384.safetensors"
+    },
+    "class_type": "CLIPVisionLoader",
+    "_meta": {
+      "title": "加载CLIP视觉"
+    }
+  },
+  "43": {
+    "inputs": {
+      "text_input": "",
+      "task": "more_detailed_caption",
+      "fill_mask": true,
+      "keep_model_loaded": false,
+      "max_new_tokens": 1024,
+      "num_beams": 3,
+      "do_sample": true,
+      "output_mask_select": "",
+      "seed": 1,
+      "speak_and_recognation": {
+        "__value__": [
+          false,
+          true
+        ]
+      },
+      "image": [
+        "47",
+        0
+      ],
+      "florence2_model": [
+        "44",
+        0
+      ]
+    },
+    "class_type": "Florence2Run",
+    "_meta": {
+      "title": "Florence2Run (Optional for BG Prompt Gen)"
+    }
+  },
+  "44": {
+    "inputs": {
+      "model": "Florence-2-base-PromptGen-v2.0",
+      "precision": "fp16",
+      "attention": "sdpa"
+    },
+    "class_type": "Florence2ModelLoader",
+    "_meta": {
+      "title": "Florence2ModelLoader (Optional)"
+    }
+  },
+  "47": {
+    "inputs": {
+      "image": "PLACEHOLDER_BACKGROUND.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Load Background Image"
+    }
+  },
+  "48": {
+    "inputs": {
+      "megapixels": 1,
+      "images": [
+        "39",
+        0
+      ]
+    },
+    "class_type": "ImageScaleToMegapixels",
+    "_meta": {
+      "title": "Scale Kimono To Megapixels"
+    }
+  },
+  "49": {
+    "inputs": {
+      "image": [
+        "48",
+        0
+      ]
+    },
+    "class_type": "GetImageSizeAndCount",
+    "_meta": {
+      "title": "Get Kimono Size & Count"
+    }
+  },
+  "58": {
+    "inputs": {
+      "prompt": "cloth,skirt",
+      "threshold": 0.3,
+      "sam_model": [
+        "59",
+        0
+      ],
+      "grounding_dino_model": [
+        "60",
+        0
+      ],
+      "image": [
+        "49",
+        0
+      ]
+    },
+    "class_type": "GroundingDinoSAM2Segment (segment anything2)",
+    "_meta": {
+      "title": "Segment Kimono"
+    }
+  },
+  "59": {
+    "inputs": {
+      "model_name": "sam2_hiera_base_plus.pt"
+    },
+    "class_type": "SAM2ModelLoader (segment anything2)",
+    "_meta": {
+      "title": "SAM2ModelLoader (segment anything2)"
+    }
+  },
+  "60": {
+    "inputs": {
+      "model_name": "GroundingDINO_SwinT_OGC (694MB)"
+    },
+    "class_type": "GroundingDinoModelLoader (segment anything2)",
+    "_meta": {
+      "title": "GroundingDinoModelLoader (segment anything2)"
+    }
+  },
+  "61": {
+    "inputs": {
+      "expand": 10,
+      "incremental_expandrate": 0,
+      "tapered_corners": true,
+      "flip_input": false,
+      "blur_radius": 0,
+      "lerp_alpha": 1,
+      "decay_factor": 1,
+      "fill_holes": true,
+      "mask": [
+        "58",
+        1
+      ]
+    },
+    "class_type": "GrowMaskWithBlur",
+    "_meta": {
+      "title": "Grow Kimono Mask With Blur"
+    }
+  },
+  "80": {
+    "inputs": {
+      "text": "PLACEHOLDER_PROMPT",
+      "anything": [
+        "43",
+        2
+      ]
+    },
+    "class_type": "easy showAnything",
+    "_meta": {
+      "title": "Show Prompt Text"
+    }
+  },
+  "86": {
+    "inputs": {
+      "pulid_file": "pulid_flux_v0.9.1.safetensors"
+    },
+    "class_type": "PulidFluxModelLoader",
+    "_meta": {
+      "title": "Load PuLID Flux Model"
+    }
+  },
+  "87": {
+    "inputs": {},
+    "class_type": "PulidFluxEvaClipLoader",
+    "_meta": {
+      "title": "Load Eva Clip (PuLID Flux)"
+    }
+  },
+  "88": {
+    "inputs": {
+      "image": "PLACEHOLDER_USER_PHOTO.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Load User Photo (PuLID Input)"
+    }
+  },
+  "89": {
+    "inputs": {
+      "provider": "CUDA"
+    },
+    "class_type": "PulidFluxInsightFaceLoader",
+    "_meta": {
+      "title": "Load InsightFace (PuLID Flux)"
+    }
+  },
+  "90": {
+    "inputs": {
+      "weight": 1,
+      "start_at": 0,
+      "end_at": 1,
+      "model": [
+        "5",
+        0
+      ],
+      "pulid_flux": [
+        "86",
+        0
+      ],
+      "eva_clip": [
+        "87",
+        0
+      ],
+      "face_analysis": [
+        "89",
+        0
+      ],
+      "image": [
+        "88",
+        0
+      ]
+    },
+    "class_type": "ApplyPulidFlux",
+    "_meta": {
+      "title": "Apply PuLID Flux"
+    }
+  },
+  "94": {
+    "inputs": {
+      "model": [
+        "90",
+        0
+      ]
+    },
+    "class_type": "FluxForwardOverrider",
+    "_meta": {
+      "title": "FluxForwardOverrider"
+    }
+  },
+  "95": {
+    "inputs": {
+      "unet_name": "flux1-dev-Q8_0.gguf"
+    },
+    "class_type": "UnetLoaderGGUF",
+    "_meta": {
+      "title": "Unet Loader (GGUF)"
+    }
+  },
+  "98": {
+    "inputs": {
+      "lora_name": "FLUX.1-Turbo-Alpha.safetensors",
+      "strength_model": 1,
+      "model": [
+        "95",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "LoRA加载器（仅模型）"
+    }
+  },
+  "99": {
+    "inputs": {
+      "seed": 600462833303542
+    },
+    "class_type": "Seed Generator",
+    "_meta": {
+      "title": "Seed Generator"
+    }
+  },
+  "101": {
+    "inputs": {
+      "output_path": "[output]",
+      "filename_prefix": "ComfyUI",
+      "filename_delimiter": "_",
+      "filename_number_padding": 4,
+      "filename_number_start": "false",
+      "extension": "png",
+      "dpi": 300,
+      "quality": 100,
+      "optimize_image": "false",
+      "lossless_webp": "false",
+      "overwrite_mode": "false",
+      "show_history": "false",
+      "show_history_by_prefix": "true",
+      "embed_workflow": "true",
+      "show_previews": "true",
+      "images": [
+        "17",
+        0
+      ]
+    },
+    "class_type": "Image Save",
+    "_meta": {
+      "title": "Image Save"
+    }
+  }
+}
