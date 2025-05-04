@@ -1,4 +1,3 @@
-
 // src/services/comfyui-service.ts
 'use server';
 
@@ -67,7 +66,7 @@ export async function uploadImageToComfyUI(
     if (!response.ok) {
       const errorText = await response.text(); // Capture the error response
       console.error(`ComfyUI Upload Error (${response.status}): ${errorText}`);
-      throw new Error(`Failed to upload image to ComfyUI: ${response.statusText} - ${errorText}`);
+      throw new Error(`ComfyUI 上傳錯誤 (${response.statusText}): ${errorText}`);
     }
 
     const result = await response.json();
@@ -81,13 +80,15 @@ export async function uploadImageToComfyUI(
       console.error('Non-Error object caught:', error); // Handle non-Error objects
     }
     if (error instanceof Error) {
-        // Check for specific fetch errors like ECONNREFUSED
+        // Check for specific fetch errors like ECONNREFUSED or network errors
         if ((error as any).cause?.code === 'ECONNREFUSED') {
-             throw new Error(`Network connection refused during ComfyUI upload. Is the server running at ${COMFYUI_SERVER_ADDRESS}?`);
+             throw new Error(`網絡連線被拒絕，無法連接 ComfyUI 伺服器 (${COMFYUI_SERVER_ADDRESS})。請檢查伺服器是否正在運行或地址是否正確。`);
+        } else if (error.message.includes('fetch failed')) {
+             throw new Error(`網絡錯誤，無法連接 ComfyUI 伺服器 (${COMFYUI_SERVER_ADDRESS})。請檢查網絡連線或 ngrok tunnel。`);
         }
-        throw new Error(`Network or fetch error during ComfyUI upload: ${error.message}`);
+        throw new Error(`網絡或 fetch 錯誤 (ComfyUI 上傳): ${error.message}`);
     }
-    throw new Error('An unknown error occurred during ComfyUI upload.');
+    throw new Error('上傳圖片到 ComfyUI 時發生未知錯誤。');
   }
 }
 
@@ -115,7 +116,7 @@ export async function queuePrompt(promptWorkflow: object): Promise<QueuePromptRe
     if (!response.ok) {
       const errorText = await response.text();
        console.error(`ComfyUI Queue Prompt Error (${response.status}): ${errorText}`);
-      throw new Error(`Failed to queue prompt: ${response.statusText} - ${errorText}`);
+      throw new Error(`無法排隊 prompt (${response.statusText}): ${errorText}`);
     }
 
     const result: QueuePromptResponse = await response.json();
@@ -123,17 +124,22 @@ export async function queuePrompt(promptWorkflow: object): Promise<QueuePromptRe
     if (result.node_errors && Object.keys(result.node_errors).length > 0) {
         console.error('ComfyUI Node Errors:', result.node_errors);
         // Optionally throw a more specific error here based on node_errors
+        const firstErrorKey = Object.keys(result.node_errors)[0];
+        const firstErrorDetails = result.node_errors[firstErrorKey];
+        throw new Error(`ComfyUI 工作流程節點錯誤 (節點 ${firstErrorKey}): ${firstErrorDetails.errors?.[0]?.message || '未知節點錯誤'}`);
     }
     return result;
   } catch (error) {
     console.error('Error during ComfyUI queue prompt fetch:', error);
      if (error instanceof Error) {
         if ((error as any).cause?.code === 'ECONNREFUSED') {
-             throw new Error(`Network connection refused during ComfyUI queue prompt. Is the server running at ${COMFYUI_SERVER_ADDRESS}?`);
+             throw new Error(`網絡連線被拒絕，無法連接 ComfyUI 伺服器 (${COMFYUI_SERVER_ADDRESS})。請檢查伺服器是否正在運行或地址是否正確。`);
+        } else if (error.message.includes('fetch failed')) {
+            throw new Error(`網絡錯誤，無法連接 ComfyUI 伺服器 (${COMFYUI_SERVER_ADDRESS})。請檢查網絡連線或 ngrok tunnel。`);
         }
-        throw new Error(`Network or fetch error during ComfyUI queue prompt: ${error.message}`);
+        throw new Error(`網絡或 fetch 錯誤 (ComfyUI 排隊): ${error.message}`);
     }
-    throw new Error('An unknown error occurred during ComfyUI queue prompt.');
+    throw new Error('排隊 ComfyUI prompt 時發生未知錯誤。');
   }
 }
 
@@ -148,19 +154,31 @@ export async function getHistory(promptId: string): Promise<ComfyUIHistory> {
     if (!response.ok) {
       const errorText = await response.text();
       console.error(`ComfyUI Get History Error (${response.status}): ${errorText}`);
-      throw new Error(`Failed to get history for prompt ${promptId}: ${response.statusText} - ${errorText}`);
+      throw new Error(`無法獲取 prompt ${promptId} 的歷史記錄 (${response.statusText}): ${errorText}`);
     }
     const result: ComfyUIHistory = await response.json();
+    // Add status check within history
+     if (result[promptId]?.status?.status_str === 'error') {
+         const errorMessages = result[promptId].status.messages?.map(m => m[1]?.message || JSON.stringify(m[1])).join('; ') || '未知執行錯誤';
+         console.error(`ComfyUI Execution Error in History for prompt ${promptId}:`, errorMessages);
+         throw new Error(`ComfyUI 執行錯誤: ${errorMessages}`);
+     }
     return result;
   } catch (error) {
      console.error(`Error fetching history for prompt ${promptId}:`, error);
      if (error instanceof Error) {
         if ((error as any).cause?.code === 'ECONNREFUSED') {
-            throw new Error(`Network connection refused getting ComfyUI history. Is the server running at ${COMFYUI_SERVER_ADDRESS}?`);
+            throw new Error(`網絡連線被拒絕，無法連接 ComfyUI 伺服器 (${COMFYUI_SERVER_ADDRESS})。`);
+        } else if (error.message.includes('fetch failed')) {
+            throw new Error(`網絡錯誤，無法連接 ComfyUI 伺服器 (${COMFYUI_SERVER_ADDRESS})。`);
         }
-        throw new Error(`Network or fetch error getting ComfyUI history: ${error.message}`);
+        // Re-throw specific execution errors caught earlier
+        if (error.message.startsWith('ComfyUI 執行錯誤:')) {
+            throw error;
+        }
+        throw new Error(`網絡或 fetch 錯誤 (獲取歷史記錄): ${error.message}`);
     }
-    throw new Error(`An unknown error occurred getting ComfyUI history for prompt ${promptId}.`);
+    throw new Error(`獲取 prompt ${promptId} 的 ComfyUI 歷史記錄時發生未知錯誤。`);
   }
 }
 
@@ -183,7 +201,7 @@ export async function getImage(filename: string, subfolder: string, type: 'outpu
     if (!response.ok) {
        const errorText = await response.text();
        console.error(`ComfyUI Get Image Error (${response.status}): ${errorText}`);
-      throw new Error(`Failed to fetch image ${filename} from ComfyUI: ${response.statusText} - ${errorText}`);
+      throw new Error(`無法從 ComfyUI 獲取圖片 ${filename} (${response.statusText}): ${errorText}`);
     }
     const arrayBuffer = await response.arrayBuffer();
     return arrayBuffer;
@@ -191,11 +209,13 @@ export async function getImage(filename: string, subfolder: string, type: 'outpu
       console.error(`Error fetching image ${filename} from ComfyUI:`, error);
       if (error instanceof Error) {
         if ((error as any).cause?.code === 'ECONNREFUSED') {
-             throw new Error(`Network connection refused getting ComfyUI image. Is the server running at ${COMFYUI_SERVER_ADDRESS}?`);
+             throw new Error(`網絡連線被拒絕，無法連接 ComfyUI 伺服器 (${COMFYUI_SERVER_ADDRESS})。`);
+        } else if (error.message.includes('fetch failed')) {
+            throw new Error(`網絡錯誤，無法連接 ComfyUI 伺服器 (${COMFYUI_SERVER_ADDRESS})。`);
         }
-        throw new Error(`Network or fetch error getting ComfyUI image: ${error.message}`);
+        throw new Error(`網絡或 fetch 錯誤 (獲取圖片): ${error.message}`);
       }
-      throw new Error(`An unknown error occurred getting ComfyUI image ${filename}.`);
+      throw new Error(`從 ComfyUI 獲取圖片 ${filename} 時發生未知錯誤。`);
   }
 }
 
@@ -212,7 +232,7 @@ export async function fetchUrlAsFile(url: string, filename: string, type: string
     try {
         const response = await fetch(url, { cache: 'no-store'}); // Avoid caching issues
         if (!response.ok) {
-            throw new Error(`Failed to fetch file from URL: ${url}, Status: ${response.statusText}`);
+            throw new Error(`無法從 URL 獲取文件: ${url}, 狀態: ${response.statusText}`);
         }
         const blob = await response.blob();
         return new File([blob], filename, { type });
@@ -220,11 +240,13 @@ export async function fetchUrlAsFile(url: string, filename: string, type: string
         console.error(`Error in fetchUrlAsFile for ${url}:`, error);
         if (error instanceof Error) {
              if ((error as any).cause?.code === 'ECONNREFUSED') {
-                 throw new Error(`Network connection refused fetching file from ${url}.`);
+                 throw new Error(`網絡連線被拒絕，無法從 ${url} 獲取文件。`);
+             } else if (error.message.includes('fetch failed')) {
+                 throw new Error(`網絡錯誤，無法從 ${url} 獲取文件。請檢查網絡連線。`);
              }
-             throw new Error(`Failed to fetch file from ${url}: ${error.message}`);
+             throw new Error(`無法從 ${url} 獲取文件: ${error.message}`);
         }
-         throw new Error(`An unknown error occurred while fetching file from ${url}.`);
+         throw new Error(`從 ${url} 獲取文件時發生未知錯誤。`);
     }
 }
 

@@ -14,6 +14,10 @@ import workflowData from '@/kimono.json'; // Assuming workflow is in this file
 import type { ImageOption } from '@/components/avatar-generation/types';
 import { generateAvatarPrompt } from '@/ai/flows/generate-avatar-prompt';
 import { randomInt } from 'crypto';
+import config from '@/config'; // Import config to access server address for error messages
+
+const COMFYUI_SERVER_ADDRESS = config.comfyuiServerAddress;
+
 
 // Define the input schema for the action using Zod
 const generateAvatarSchema = z.object({
@@ -212,7 +216,7 @@ export async function generateAvatarAction(
     // 7. Poll for Result (using WebSocket is preferred, but polling is simpler for now)
     let history;
     let attempts = 0;
-    const maxAttempts = 30; // 30 attempts * 2 seconds = 1 minute timeout
+    const maxAttempts = 60; // Increase attempts to 60 (2 minutes timeout)
     const pollInterval = 2000; // 2 seconds
 
     while (attempts < maxAttempts) {
@@ -222,32 +226,45 @@ export async function generateAvatarAction(
       history = await getHistory(promptId);
 
       const promptHistory = history[promptId];
-      if (promptHistory && promptHistory.outputs) {
+      if (promptHistory) {
          // Check status first
-        if (promptHistory.status && promptHistory.status.completed) {
+         if (promptHistory.status?.completed) {
            console.log("Prompt completed!");
+           // Check for outputs even if completed is true
+           if (!promptHistory.outputs || Object.keys(promptHistory.outputs).length === 0) {
+               console.warn("Prompt completed but no outputs found in history yet. Polling again...");
+               // Continue polling for a few more seconds if outputs are missing
+               if (attempts < maxAttempts - 5) continue; // Allow 5 extra polls
+               else throw new Error("Prompt completed, but no output data was received from ComfyUI.");
+           }
            break; // Exit loop, we have the result
-        } else if (promptHistory.status && promptHistory.status.status_str === 'error') {
-             console.error("ComfyUI execution error:", promptHistory.status.messages);
-             throw new Error(`ComfyUI 執行錯誤: ${promptHistory.status.messages?.[0]?.[1]?.message || '未知錯誤'}`);
+        } else if (promptHistory.status?.status_str === 'error') {
+             console.error("ComfyUI execution error in history:", promptHistory.status.messages);
+             const errorMessages = promptHistory.status.messages?.map(m => m[1]?.message || JSON.stringify(m[1])).join('; ') || '未知執行錯誤';
+             throw new Error(`ComfyUI 執行錯誤: ${errorMessages}`);
         }
-        // Optional: Check for intermediate outputs if needed
+        // Optional: Log intermediate status
         // console.log("Prompt status:", promptHistory.status?.status_str);
       }
     }
 
     if (attempts >= maxAttempts) {
-      throw new Error("生成超時，請稍後再試。");
+      throw new Error(`生成超時（${maxAttempts * pollInterval / 1000}秒），請稍後再試或檢查 ComfyUI 伺服器狀態 (${COMFYUI_SERVER_ADDRESS})。`);
     }
 
-    // 8. Extract Output Image Filename from History
-    const promptHistory = history[promptId];
+    // 8. Extract Output Image Filename from History (Ensure history is defined)
+    const promptHistory = history?.[promptId];
+    if (!promptHistory?.outputs) {
+        console.error("Final history check failed: No outputs found for prompt", promptId, history);
+        throw new Error("處理記錄中未找到輸出數據。");
+    }
+
     let outputNodeId: string | undefined;
 
     // Find the output node (assuming it's the VAEDecode or Image Save node)
     // Node 17 = VAEDecode, Node 101 = Image Save
-     const outputNodeCandidates = ["17", "101"];
-     for (const nodeId of outputNodeCandidates) {
+     const outputNodeCandidates = ["17", "101"]; // Prioritize 101 (Save Image) if available
+     for (const nodeId of ["101", "17"]) {
          if (promptHistory.outputs[nodeId]?.images?.length > 0) {
             outputNodeId = nodeId;
             break;
@@ -255,8 +272,8 @@ export async function generateAvatarAction(
      }
 
     if (!outputNodeId) {
-        console.error("Could not find output node in history:", promptHistory.outputs);
-        throw new Error("無法喺處理記錄搵到輸出圖像。");
+        console.error("Could not find valid output node with images in history:", promptHistory.outputs);
+        throw new Error("無法喺處理記錄搵到輸出圖像。檢查 ComfyUI 工作流程嘅輸出節點。");
     }
 
     const outputImageInfo = promptHistory.outputs[outputNodeId].images[0];
@@ -279,6 +296,19 @@ export async function generateAvatarAction(
 
   } catch (error: any) {
     console.error("Avatar generation failed:", error);
-    return { success: false, error: `生成失敗: ${error.message || '未知錯誤'}` };
+    // Ensure error message is extracted correctly
+    let errorMessage = '生成失敗: 未知錯誤';
+    if (error instanceof Error) {
+        errorMessage = `生成失敗: ${error.message}`;
+    } else if (typeof error === 'string') {
+        errorMessage = `生成失敗: ${error}`;
+    }
+    // Check if it's a network error and include server address
+    if (errorMessage.includes('Network') || errorMessage.includes('fetch failed') || errorMessage.includes('ECONNREFUSED') || errorMessage.includes('網絡')) {
+         errorMessage += ` (伺服器地址: ${COMFYUI_SERVER_ADDRESS})`;
+    }
+
+    return { success: false, error: errorMessage };
   }
 }
+
