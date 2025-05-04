@@ -122,6 +122,18 @@ const PhotoSelectionSection: React.FC<PhotoSelectionSectionProps> = ({
                         </Alert>
                       )}
 
+                       {/* Show alert when camera is active but permission is denied */}
+                       {isCapturing && hasCameraPermission === false && (
+                           <Alert variant="destructive" className="max-w-[200px] mx-auto p-2 text-xs">
+                             <AlertTriangle className="h-3 w-3" />
+                             <AlertTitle className="text-xs">冇相機權限</AlertTitle>
+                             <AlertDescription className="text-xs">
+                               請允許相機權限再試。
+                             </AlertDescription>
+                           </Alert>
+                       )}
+
+
                       {/* Action Buttons */}
                       <div className="flex gap-1.5 max-w-[200px] mx-auto">
                         {!isCapturing ? (
@@ -205,7 +217,8 @@ const PhotoSelectionSection: React.FC<PhotoSelectionSectionProps> = ({
                         </Button>
                       </div>
                       <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 gap-1.5">
-                        {isFetchingPhotos ? (
+                        {/* Show skeletons ONLY when fetching is triggered by user */}
+                        {isFetchingPhotos && fetchedPhotos.length === 0 ? (
                           Array.from({ length: 4 }).map((_, idx) => (
                             <Skeleton key={`skel-${idx}`} className="aspect-square rounded-md bg-muted/50" />
                           ))
@@ -240,10 +253,12 @@ const PhotoSelectionSection: React.FC<PhotoSelectionSectionProps> = ({
                             </button>
                           ))
                         ) : (
-                          <p className="col-span-full text-xs text-center text-foreground/80 py-2">
-                             {/* Only show this if NOT actively fetching */}
-                             {!isFetchingPhotos && `未搵到用戶「${watchedUsername}」嘅相。試下用 QR code 上載？`}
-                          </p>
+                           // Show message only if not fetching and no photos
+                           !isFetchingPhotos && (
+                              <p className="col-span-full text-xs text-center text-foreground/80 py-2">
+                                未搵到用戶「{watchedUsername}」嘅相。試下用 QR code 上載？
+                              </p>
+                           )
                         )}
                       </div>
                     </div>

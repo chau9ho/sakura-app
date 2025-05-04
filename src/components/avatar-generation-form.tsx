@@ -9,7 +9,7 @@ import * as z from "zod";
 import { Form } from "@/components/ui/form";
 import { useToast } from "@/hooks/use-toast";
 import { fetchPhotosAction } from '@/app/actions/fetch-photos';
-import { generateAvatarAction } from '@/app/actions/generate-avatar-action';
+import { generateAvatarAction, type GenerateAvatarResult } from '@/app/actions/generate-avatar-action';
 import { Loader2, Wand2 } from 'lucide-react';
 import { Accordion } from "@/components/ui/accordion";
 import { Button } from "@/components/ui/button";
@@ -88,17 +88,22 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
     : "";
 
    // Function to move to the next accordion item
-   const nextStep = (currentStep: string) => {
+   const nextStep = useCallback((currentStep: string) => {
     const steps = ["username-section", "photo-section", "kimono-section", "background-section", "description-section"];
     const currentIndex = steps.indexOf(currentStep);
     if (currentIndex < steps.length - 1) {
         // Only advance if the current step is valid
         const fieldName = currentStep.split('-')[0] as keyof AvatarFormValues;
+        // Check error specifically for the field associated with the current step
         if (fieldName && !form.formState.errors[fieldName]) {
            setActiveAccordionItem(steps[currentIndex + 1]);
+        } else if (!fieldName && currentStep === 'username-section') { // Handle username specific check
+            if (!form.formState.errors.username) {
+                setActiveAccordionItem(steps[currentIndex + 1]);
+            }
         }
     }
-  };
+   }, [form.formState.errors]); // Dependency on errors to re-evaluate ability to move
 
 
    // --- Progress Simulation ---
@@ -113,10 +118,15 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
           if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
           return 95; // Cap at 95% until success/failure
         }
-        const increment = prev < 50 ? 2 : (prev < 80 ? 5 : 3);
+        // Faster increments initially, then slower
+        let increment = 5;
+        if (prev < 30) increment = 10;
+        else if (prev < 60) increment = 7;
+        else if (prev < 85) increment = 4;
+        else increment = 2;
         return Math.min(prev + increment, 95);
       });
-    }, 500); // Update every 500ms
+    }, 300); // Update more frequently
   };
 
    const completeProgress = () => {
@@ -163,7 +173,7 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
       if (isCapturing) {
           setIsCapturing(false);
       }
-  }, [isCapturing]);
+  }, [isCapturing]); // Depends on isCapturing state
 
 
   // Handle photo selection (from file upload, camera, or fetched photos)
@@ -296,8 +306,14 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
 
         // Draw the square portion of the video onto the square canvas
         try {
+            // Flip the image horizontally for a mirror effect
+            context.translate(canvasSize, 0);
+            context.scale(-1, 1);
             context.drawImage(video, sx, sy, sWidth, sHeight, 0, 0, canvasSize, canvasSize);
-            console.log("Photo drawn to canvas.");
+            // Reset the transformation
+            context.setTransform(1, 0, 0, 1, 0, 0);
+
+            console.log("Photo drawn to canvas (mirrored).");
 
             const dataUrl = canvasRef.current.toDataURL('image/png'); // Use PNG for consistency
             handlePhotoSelection('camera', dataUrl); // Pass dataUrl to handler
@@ -305,7 +321,7 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
             console.log("Photo captured successfully (as data URL).");
 
             // Explicitly stop camera after successful capture
-            stopCamera();
+             stopCamera(); // Already called within handlePhotoSelection indirectly
 
         } catch (drawError) {
              console.error("Error drawing image to canvas:", drawError);
@@ -327,10 +343,11 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
    const fetchUserPhotos = useCallback(async (username: string, isUserTriggered: boolean = false) => {
     if (!username) return;
     console.log(`Fetching photos for user: ${username}`);
+    let showFetchingIndicator = isUserTriggered; // Only show spinner if user clicked refresh
     startFetchingPhotosTransition(async () => {
         // Don't clear photos immediately if not user triggered to avoid flicker
-        if (isUserTriggered) {
-            setFetchedPhotos([]);
+        if (showFetchingIndicator) {
+             setFetchedPhotos([]); // Clear only when user explicitly refreshes
         }
 
         const result = await fetchPhotosAction(username);
@@ -339,7 +356,7 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
             setFetchedPhotos(result.photos);
             console.log(`Fetched ${result.photos.length} photos.`);
             if (result.photos.length > 0) {
-                 if (isUserTriggered) { // Only toast if user explicitly refreshed
+                 if (showFetchingIndicator) { // Only toast if user explicitly refreshed
                     toast({
                         title: "圖片已載入",
                         description: `搵到 ${result.photos.length} 張 ${username} 嘅相。`,
@@ -353,11 +370,12 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
                  }
             } else {
                  // Only show "not found" toast if the fetch was triggered by the user explicitly
-                 if (isUserTriggered) {
+                 if (showFetchingIndicator) {
                     toast({
                         title: "未搵到圖片",
                         description: `暫時未搵到 ${username} 嘅相。試下用QR code上載？`,
-                        variant: "default",
+                        variant: "default", // Use default variant, not destructive
+                        duration: 3000, // Shorter duration
                     });
                  }
                  // Clear selection if fetch succeeds with 0 photos AND no photo was selected before
@@ -386,7 +404,7 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
             }
         }
     });
-  }, [toast, form, handlePhotoSelection]);
+  }, [toast, form, handlePhotoSelection]); // Dependencies for fetchUserPhotos
 
 
   // Cleanup camera on component unmount
@@ -402,21 +420,23 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
             URL.revokeObjectURL(selectedPhotoPreview);
         }
     };
-  }, [stopCamera, selectedPhotoPreview]);
+  }, [stopCamera, selectedPhotoPreview]); // Dependencies for cleanup
 
   // Auto-fetch photos when username changes (debounced)
+  // **Crucially, remove fetchUserPhotos and form from the dependency array**
+  // to prevent it running on every render due to function identity changes.
+  // We only want it to run when watchedUsername actually changes.
    useEffect(() => {
        const handler = setTimeout(() => {
             const currentUsername = form.getValues("username");
-            if (watchedUsername && watchedUsername === currentUsername && currentUsername.length > 0) { // Ensure it's the latest value and not empty
+            if (watchedUsername && watchedUsername === currentUsername && currentUsername.length > 0) {
                  console.log(`Debounced: Fetching photos for ${watchedUsername}`);
                  // Initial fetch is not user triggered
                  fetchUserPhotos(watchedUsername, false);
-            } else if (!watchedUsername && !currentUsername) { // Only clear if both watched and actual are empty
+            } else if (!watchedUsername && !currentUsername) {
                  console.log("Debounced: Clearing fetched photos as username is empty.");
                  setFetchedPhotos([]);
                  setSelectedFetchedPhotoId(null);
-                 // Clear photo value only if it wasn't a manually selected file/camera shot
                  const currentPhotoValue = form.getValues("photo");
                  if (typeof currentPhotoValue === 'string' && currentPhotoValue.startsWith('http')) {
                      form.setValue("photo", undefined, { shouldValidate: false });
@@ -428,7 +448,8 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
        return () => {
            clearTimeout(handler);
        };
-   }, [watchedUsername, fetchUserPhotos, form]);
+   // eslint-disable-next-line react-hooks/exhaustive-deps
+   }, [watchedUsername]); // ONLY depend on watchedUsername
 
 
   // Handle form submission
@@ -445,63 +466,61 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
     startProgressSimulation();
 
     startTransition(async () => {
-      try {
-        // Find the full kimono and background objects based on their IDs
-        const selectedKimono = kimonos.find(k => k.id === values.kimono);
-        const selectedBackground = backgrounds.find(b => b.id === values.background);
+        let result: GenerateAvatarResult = { success: false, error: "未知錯誤" }; // Default error
+        try {
+            // Find the full kimono and background objects based on their IDs
+            const selectedKimono = kimonos.find(k => k.id === values.kimono);
+            const selectedBackground = backgrounds.find(b => b.id === values.background);
 
-        if (!selectedKimono) {
-           throw new Error(`無法找到所選的和服資料 (ID: ${values.kimono})。`);
+            if (!selectedKimono) {
+                throw new Error(`無法找到所選的和服資料 (ID: ${values.kimono})。`);
+            }
+            if (!selectedBackground) {
+                throw new Error(`無法找到所選的背景資料 (ID: ${values.background})。`);
+            }
+            if (!values.photo) {
+                throw new Error("未揀相片。");
+            }
+
+            // Prepare input for the server action
+            const actionInput = {
+            username: values.username,
+            photo: values.photo, // Pass File, data URL, or HTTP URL directly
+            kimono: selectedKimono,
+            background: selectedBackground,
+            userDescription: values.userDescription,
+            };
+
+            console.log("Calling generateAvatarAction with prepared input...");
+            result = await generateAvatarAction(actionInput); // Assign result here
+            console.log("generateAvatarAction result received:", result);
+
+            if (result.success && result.imageUrl) {
+            setGeneratedImageUrl(result.imageUrl);
+            setGeneratedPromptText(result.prompt || null);
+            completeProgress();
+            toast({
+                title: "頭像生成完成！🎉",
+                description: "你獨一無二嘅櫻花頭像整好喇。",
+            });
+            setActiveAccordionItem(''); // Collapse all sections after success
+            } else {
+            // Throw error using the result's error message
+            throw new Error(result.error || "伺服器發生未知錯誤。");
+            }
+
+        } catch (error: any) {
+            console.error("Generation onSubmit catch block:", error);
+            resetProgress(); // Reset progress on error
+            toast({
+            title: "生成失敗 😥",
+            // Display the caught error message, or the result error if available
+            description: error.message || result?.error || "發生咗啲意料之外嘅錯誤。",
+            variant: "destructive",
+            });
+            // Keep accordion open to the last step or relevant error step?
+            // For now, let's not change the active item on error.
         }
-        if (!selectedBackground) {
-            throw new Error(`無法找到所選的背景資料 (ID: ${values.background})。`);
-        }
-         if (!values.photo) {
-             throw new Error("未揀相片。");
-         }
-
-         // Prepare input for the server action
-        const actionInput = {
-          username: values.username,
-          photo: values.photo, // Pass File, data URL, or HTTP URL directly
-          kimono: selectedKimono,
-          background: selectedBackground,
-          userDescription: values.userDescription,
-        };
-
-        console.log("Calling generateAvatarAction with prepared input...");
-        const result = await generateAvatarAction(actionInput);
-        console.log("generateAvatarAction result received:", result);
-
-
-        if (result.success && result.imageUrl) {
-          setGeneratedImageUrl(result.imageUrl);
-          setGeneratedPromptText(result.prompt || null);
-          completeProgress();
-          toast({
-            title: "頭像生成完成！🎉",
-            description: "你獨一無二嘅櫻花頭像整好喇。",
-          });
-           setActiveAccordionItem(''); // Collapse all sections after success
-        } else {
-           // Use the specific error from the action if available
-           const errorMessage = result.error || "伺服器發生未知錯誤。";
-           console.error("Generation failed in action:", errorMessage);
-           throw new Error(errorMessage); // Throw the specific error
-        }
-
-      } catch (error: any) {
-        console.error("Generation onSubmit catch block:", error);
-        resetProgress(); // Reset progress on error
-        toast({
-          title: "生成失敗 😥",
-          // Display the caught error message
-          description: error.message || "發生咗啲意料之外嘅錯誤。",
-          variant: "destructive",
-        });
-         // Keep accordion open to the last step or relevant error step?
-         // For now, let's not change the active item on error.
-      }
     });
   }
 
