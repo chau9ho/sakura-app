@@ -72,12 +72,14 @@ const PhotoSelectionSection: React.FC<PhotoSelectionSectionProps> = ({
   return (
     <AccordionItem value="photo-section" disabled={disabled}>
       <AccordionTrigger className="text-base font-semibold hover:no-underline px-2 py-2 rounded-md hover:bg-secondary/50 data-[state=open]:bg-secondary/80 disabled:opacity-50">
+
         <span className="flex items-center gap-2">
           <ImageIcon className="h-5 w-5" />
           步驟一：你嘅相
           {watchedPhoto && !form.formState.errors.photo && <CheckCircle2 className="h-5 w-5 text-green-500" />}
         </span>
       </AccordionTrigger>
+
       <AccordionContent className="pt-1 pb-2 px-2">
         <FormField
           control={form.control}
@@ -93,7 +95,7 @@ const PhotoSelectionSection: React.FC<PhotoSelectionSectionProps> = ({
                       <div className="relative w-full max-w-[200px] mx-auto aspect-square border border-dashed border-primary/50 rounded-lg flex items-center justify-center bg-secondary/50 overflow-hidden">
                         {/* Video Element */}
                         <video
-                          ref={videoRef}
+                          ref={videoRef} // Ensure video stream is shown
                           className={cn(
                             "w-full h-full object-cover",
                             // Explicitly show when capturing and permission is granted, otherwise hide
@@ -107,7 +109,7 @@ const PhotoSelectionSection: React.FC<PhotoSelectionSectionProps> = ({
                         {/* Preview Image */}
                         {showPreview && (
                           <Image
-                            src={selectedPhotoPreview}
+                            src={selectedPhotoPreview || ''}
                             alt="已選相片預覽"
                             fill
                             className="object-contain" // Use contain to avoid cropping previews
@@ -134,7 +136,7 @@ const PhotoSelectionSection: React.FC<PhotoSelectionSectionProps> = ({
                           <AlertTitle className="text-xs">相機權限</AlertTitle>
                           <AlertDescription className="text-xs">
                             無法存取相機。請喺瀏覽器設定允許權限。
-                          </AlertDescription>
+                          </AlertDescription> 
                         </Alert>
                       )}
 
