@@ -1,4 +1,3 @@
-
 import React, { RefObject } from 'react';
 import { UseFormReturn } from 'react-hook-form';
 import Image from 'next/image';
@@ -93,38 +92,44 @@ const PhotoSelectionSection: React.FC<PhotoSelectionSectionProps> = ({
                     <div className="flex-1 space-y-1">
                       {/* Preview Area - Ensure fixed aspect ratio */}
                       <div className="relative w-full max-w-[200px] mx-auto aspect-square border border-dashed border-primary/50 rounded-lg flex items-center justify-center bg-secondary/50 overflow-hidden">
-                        {/* Video Element */}
+                        {/* Video Element - Always rendered */}
                         <video
-                          ref={videoRef} // Ensure video stream is shown
+                          ref={videoRef}
                           className={cn(
-                            "w-full h-full object-cover",
-                            // Explicitly show when capturing and permission is granted, otherwise hide
-                            showVideo ? "block" : "hidden"
+                            "absolute inset-0 w-full h-full object-cover transition-opacity duration-300",
+                            // Use opacity and z-index to show/hide
+                            showVideo ? "opacity-100 z-10" : "opacity-0 -z-10 pointer-events-none"
                           )}
                           autoPlay
                           playsInline // Important for mobile
                           muted // Important for autoplay
                         />
 
-                        {/* Preview Image */}
-                        {showPreview && (
-                          <Image
-                            src={selectedPhotoPreview || ''}
-                            alt="已選相片預覽"
-                            fill
-                            className="object-contain" // Use contain to avoid cropping previews
-                            sizes="(max-width: 640px) 50vw, 200px"
-                            key={selectedPhotoPreview} // Ensure key updates if src changes
-                          />
+                        {/* Preview Image - Conditionally hide */}
+                        {selectedPhotoPreview && (
+                           <div className={cn(
+                                "absolute inset-0 w-full h-full transition-opacity duration-300",
+                                showPreview ? "opacity-100 z-0" : "opacity-0 -z-10 pointer-events-none"
+                            )}>
+                               <Image
+                                src={selectedPhotoPreview}
+                                alt="已選相片預覽"
+                                fill
+                                className="object-contain" // Use contain to avoid cropping previews
+                                sizes="(max-width: 640px) 50vw, 200px"
+                                key={selectedPhotoPreview} // Ensure key updates if src changes
+                                />
+                           </div>
                         )}
 
-                         {/* Placeholder */}
-                         {showPlaceholder && (
-                            <div className="text-center text-foreground/80 p-2">
+                         {/* Placeholder - Conditionally hide */}
+                         <div className={cn(
+                             "text-center text-foreground/80 p-2 transition-opacity duration-300",
+                              showPlaceholder ? "opacity-100 z-0" : "opacity-0 -z-10 pointer-events-none"
+                          )}>
                               <ImageIcon className="mx-auto h-6 w-6 mb-1" />
                               <span className="text-xs">預覽會喺度顯示</span>
-                            </div>
-                         )}
+                         </div>
                       </div>
                       {/* Hidden canvas for capturing photo */}
                       <canvas ref={canvasRef} style={{ display: 'none' }}></canvas>
@@ -136,7 +141,7 @@ const PhotoSelectionSection: React.FC<PhotoSelectionSectionProps> = ({
                           <AlertTitle className="text-xs">相機權限</AlertTitle>
                           <AlertDescription className="text-xs">
                             無法存取相機。請喺瀏覽器設定允許權限。
-                          </AlertDescription> 
+                          </AlertDescription>
                         </Alert>
                       )}
 
