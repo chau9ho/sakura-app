@@ -23,6 +23,13 @@ const nextConfig = {
          // port: '9002', // Example: Adjust if needed
          pathname: '/**',
        },
+       // Allow images from Google Cloud Storage
+       {
+         protocol: 'https',
+         hostname: 'storage.googleapis.com',
+         port: '',
+         pathname: '/**',
+       },
     ],
     // Allow serving local files via `next/image`
     // Note: This is generally for development. For production, use a dedicated image host or CDN.
