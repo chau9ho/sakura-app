@@ -1,3 +1,4 @@
+
 "use client"
 
 import * as React from "react"
@@ -29,7 +30,7 @@ const AccordionTrigger = React.forwardRef<
     <AccordionPrimitive.Trigger
       ref={ref}
       className={cn(
-        "flex flex-1 items-center justify-between py-2 px-3 font-medium transition-all hover:underline [&[data-state=open]>svg]:rotate-180 disabled:cursor-not-allowed disabled:opacity-50", // Reduced padding py-2 px-3
+        "flex flex-1 items-center justify-between py-2 px-3 font-medium transition-all [&[data-state=open]>svg]:rotate-180 disabled:cursor-not-allowed disabled:opacity-50", // Removed hover:underline, adjusted padding py-2 px-3
         className
       )}
       {...props}
@@ -58,3 +59,4 @@ const AccordionContent = React.forwardRef<
 AccordionContent.displayName = AccordionPrimitive.Content.displayName
 
 export { Accordion, AccordionItem, AccordionTrigger, AccordionContent }
+    
