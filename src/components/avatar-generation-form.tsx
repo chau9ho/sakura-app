@@ -150,13 +150,21 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
    const stopCamera = useCallback(() => {
      console.log("Attempting to stop camera stream..."); // Debug log
      if (stream) {
-        stream.getTracks().forEach(track => track.stop());
+        stream.getTracks().forEach(track => {
+            console.log(`Stopping track: ${track.label}, state: ${track.readyState}`);
+            track.stop();
+        });
         console.log("MediaStream tracks stopped.");
         setStream(null); // Clear the stream state
+     } else {
+        console.log("No active stream found to stop.");
      }
-     if (videoRef.current) {
-        videoRef.current.srcObject = null; // Ensure video src is cleared
+     if (videoRef.current && videoRef.current.srcObject) {
+        // Ensure video src is cleared
+        videoRef.current.srcObject = null;
         console.log("Video element srcObject cleared.");
+     } else {
+        console.log("No srcObject to clear on video element.");
      }
       setIsCapturing(false); // Always set capturing to false when stopping
       console.log("Set isCapturing to false.");
@@ -233,29 +241,49 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
           videoRef.current.srcObject = newStream;
           // Use a promise to wait for video to be ready
           await new Promise<void>((resolve, reject) => {
-              if (!videoRef.current) {
+              const currentVideoRef = videoRef.current; // Capture ref in closure
+              if (!currentVideoRef) {
+                  console.error("Video ref became null during startCamera promise.");
                   reject("Video ref became null");
                   return;
               }
-              videoRef.current.onloadedmetadata = async () => {
-                  try {
-                      if (videoRef.current) { // Check ref again inside async callback
-                        await videoRef.current.play();
-                        console.log("Camera stream started and playing.");
-                        setIsCapturing(true); // Set capturing true only after successful play
-                        resolve();
-                      } else {
-                          reject("Video ref became null before playing");
-                      }
-                  } catch (playError) {
-                      console.error("Error playing video stream:", playError);
-                      reject(playError);
-                  }
-              };
-               videoRef.current.onerror = (e) => {
-                  console.error("Video element error:", e);
+
+              const onMetadataLoaded = async () => {
+                  // Clean up listeners first
+                  currentVideoRef.removeEventListener('loadedmetadata', onMetadataLoaded);
+                  currentVideoRef.removeEventListener('error', onError);
+                   try {
+                       if (videoRef.current) { // Check ref again inside async callback
+                         await videoRef.current.play();
+                         console.log("Camera stream started and playing.");
+                         setIsCapturing(true); // Set capturing true only after successful play
+                         resolve();
+                       } else {
+                           console.error("Video ref became null before playing.");
+                           reject("Video ref became null before playing");
+                       }
+                   } catch (playError) {
+                       console.error("Error playing video stream:", playError);
+                       reject(playError);
+                   }
+               };
+
+              const onError = (e: Event) => {
+                  // Clean up listeners
+                  currentVideoRef.removeEventListener('loadedmetadata', onMetadataLoaded);
+                  currentVideoRef.removeEventListener('error', onError);
+                  console.error("Video element error during setup:", e);
                   reject(e);
                };
+
+              currentVideoRef.addEventListener('loadedmetadata', onMetadataLoaded);
+              currentVideoRef.addEventListener('error', onError);
+
+              // Check if metadata is already loaded (possible race condition)
+              if (currentVideoRef.readyState >= currentVideoRef.HAVE_METADATA) {
+                  console.log("Video metadata already loaded, attempting to play directly.");
+                  onMetadataLoaded(); // Call handler directly
+              }
           });
         } else {
             console.warn("Video ref not available after getting stream.");
@@ -279,25 +307,57 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
 
   // Capture photo from video stream
   const capturePhoto = useCallback(() => {
-    console.log("Attempting to capture photo...");
-    if (!isCapturing) {
-        console.warn("Capture called when not capturing.");
+    console.log("Attempting to capture photo..."); // Debugging line
+
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+
+    if (!video || !canvas) {
+        console.error("Capture failed: Video or Canvas ref is missing.");
+        toast({ title: "影相失敗", description: "內部錯誤：找不到影片或畫布元件。", variant: "destructive" });
+        stopCamera();
         return;
     }
-    if (videoRef.current && canvasRef.current) {
-      const context = canvasRef.current.getContext('2d');
-      const video = videoRef.current;
 
-      // Check if video stream is active and has dimensions
-      if (context && video.readyState >= video.HAVE_METADATA && video.videoWidth > 0 && video.videoHeight > 0) {
+    if (!isCapturing) {
+        console.warn("Capture called when not actively capturing.");
+        // Optionally show a toast, but don't necessarily stop the camera unless it shouldn't be running
+        // stopCamera();
+        return;
+    }
+
+
+    const context = canvas.getContext('2d');
+    if (!context) {
+        console.error("Capture failed: Canvas 2D context is unavailable.");
+        toast({ title: "影相失敗", description: "無法獲取畫布內容。", variant: "destructive" });
+        stopCamera();
+        return;
+    }
+
+    // Check video readiness more thoroughly
+    if (video.readyState < video.HAVE_METADATA || video.videoWidth === 0 || video.videoHeight === 0) {
+        console.error("Capture failed: Video not ready or has no dimensions.", {
+            readyState: video.readyState,
+            width: video.videoWidth,
+            height: video.videoHeight,
+        });
+        toast({ title: "影相失敗", description: "相機影片尚未準備好，請稍候再試。", variant: "destructive" });
+        // Don't stop camera here, allow user to retry? Or stop? Let's stop for now.
+        stopCamera();
+        return;
+    }
+
+
+    try {
         const videoWidth = video.videoWidth;
         const videoHeight = video.videoHeight;
 
         // Create a square canvas
         const size = Math.min(videoWidth, videoHeight);
         const canvasSize = 480; // Output size for the photo
-        canvasRef.current.width = canvasSize;
-        canvasRef.current.height = canvasSize;
+        canvas.width = canvasSize;
+        canvas.height = canvasSize;
 
         // Calculate source rectangle (crop to center square)
         const sx = (videoWidth - size) / 2;
@@ -306,52 +366,46 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
         const sHeight = size;
 
         // Draw the square portion of the video onto the square canvas
-        try {
-            // Flip the image horizontally for a mirror effect
-            context.translate(canvasSize, 0);
-            context.scale(-1, 1);
-            context.drawImage(video, sx, sy, sWidth, sHeight, 0, 0, canvasSize, canvasSize);
-            // Reset the transformation
-            context.setTransform(1, 0, 0, 1, 0, 0);
+        // Flip the image horizontally for a mirror effect
+        context.translate(canvasSize, 0);
+        context.scale(-1, 1);
+        context.drawImage(video, sx, sy, sWidth, sHeight, 0, 0, canvasSize, canvasSize);
+        // Reset the transformation
+        context.setTransform(1, 0, 0, 1, 0, 0);
 
-            console.log("Photo drawn to canvas (mirrored).");
+        console.log("Photo drawn to canvas (mirrored).");
 
-            const dataUrl = canvasRef.current.toDataURL('image/png'); // Use PNG for consistency
+        const dataUrl = canvas.toDataURL('image/png'); // Use PNG for consistency
 
-            // Stop the camera *before* updating the state
-            stopCamera();
+        // Stop the camera *after* successful capture and getting data URL
+        stopCamera();
 
-            // Now handle the selection, which also updates the preview
-            handlePhotoSelection('camera', dataUrl); // Pass dataUrl to handler
-            console.log("Photo captured successfully (as data URL).");
+        // Now handle the selection, which also updates the preview
+        handlePhotoSelection('camera', dataUrl); // Pass dataUrl to handler
+        console.log("Photo captured successfully (as data URL).");
 
-
-        } catch (drawError) {
-             console.error("Error drawing image to canvas:", drawError);
-             toast({ title: "影相失敗", description: "繪製圖像時發生錯誤。", variant: "destructive" });
-             stopCamera(); // Stop camera on failure
-        }
-      } else {
-         // Log more details
-         console.error("Capture failed: Video not ready or context unavailable.", { readyState: video.readyState, width: video.videoWidth, height: video.videoHeight, contextExists: !!context });
-         toast({ title: "影相失敗", description: "未能成功影相，請再試一次或檢查相機連接。", variant: "destructive" });
-         stopCamera(); // Stop camera on failure
-      }
-    } else {
-        console.warn("CapturePhoto called but video or canvas ref is missing:", { isCapturing, videoRefExists: !!videoRef.current, canvasRefExists: !!canvasRef.current });
-        stopCamera(); // Attempt to stop camera if refs are missing unexpectedly
+    } catch (drawError) {
+        console.error("Error drawing image to canvas:", drawError);
+        toast({ title: "影相失敗", description: "繪製圖像時發生錯誤。", variant: "destructive" });
+        stopCamera(); // Stop camera on draw failure
     }
+
   }, [isCapturing, handlePhotoSelection, toast, stopCamera]); // stopCamera is stable now
 
 
    // --- Photo Fetching Logic ---
    const fetchUserPhotos = useCallback(async (username: string, isUserTriggered: boolean = false) => {
-    if (!username) return;
-    console.log(`Fetching photos for user: ${username}`);
+    if (!username) {
+         console.log("Fetch photos skipped: no username provided.");
+         return;
+    }
+    console.log(`Fetching photos for user: ${username}, Triggered by user: ${isUserTriggered}`);
     let showFetchingIndicator = isUserTriggered; // Only show spinner if user clicked refresh
 
     // Only start transition (show spinner) if user triggered
     const fetchLogic = async () => {
+      // Only clear existing photos if explicitly triggered by user,
+      // otherwise keep them for a smoother experience while typing username
       if (showFetchingIndicator) {
           setFetchedPhotos([]); // Clear only when user explicitly refreshes
       }
@@ -369,8 +423,9 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
                   });
               }
               // Auto-select the first photo if none is currently selected
+              // Check both form value and preview state
               const currentPhotoValue = form.getValues("photo");
-              if (!currentPhotoValue && result.photos[0]) {
+              if (!currentPhotoValue && !selectedPhotoPreview && result.photos[0]) {
                   console.log("Auto-selecting first fetched photo.");
                   handlePhotoSelection('fetched', result.photos[0]);
               }
@@ -384,13 +439,13 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
                       duration: 3000, // Shorter duration
                   });
               }
-              // Clear selection if fetch succeeds with 0 photos AND no photo was selected before
-              const currentPhotoValue = form.getValues("photo");
-              if (!currentPhotoValue) {
-                  setSelectedFetchedPhotoId(null);
-                  form.setValue("photo", undefined, { shouldValidate: false });
-                  setSelectedPhotoPreview(null);
-              }
+              // Don't clear selection if fetch succeeds with 0 photos, user might have uploaded/captured one
+              // But if no photo is selected *at all*, clear related states
+                const currentPhotoValue = form.getValues("photo");
+               if (!currentPhotoValue && !selectedPhotoPreview) {
+                   setSelectedFetchedPhotoId(null);
+                   // No need to setValue to undefined here, let user choose
+               }
           }
       } else {
           console.error("Error fetching user photos:", result.error);
@@ -403,7 +458,7 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
            setFetchedPhotos([]); // Clear photos on error
            // Clear selection if no photo was selected before the error
            const currentPhotoValue = form.getValues("photo");
-           if (!currentPhotoValue) {
+           if (!currentPhotoValue && !selectedPhotoPreview) {
               setSelectedFetchedPhotoId(null);
               form.setValue("photo", undefined, { shouldValidate: false });
               setSelectedPhotoPreview(null);
@@ -417,7 +472,7 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
         fetchLogic(); // Run directly without transition if not user triggered
     }
 
-  }, [toast, form, handlePhotoSelection, startFetchingPhotosTransition]); // Added startFetchingPhotosTransition
+  }, [toast, form, handlePhotoSelection, startFetchingPhotosTransition, selectedPhotoPreview]); // Added startFetchingPhotosTransition & selectedPhotoPreview
 
 
   // Cleanup camera on component unmount
@@ -442,22 +497,29 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
 
   // Auto-fetch photos when username changes (debounced)
   useEffect(() => {
+       // Don't fetch immediately on mount if username is empty
+       if (!watchedUsername && !form.formState.isDirty) {
+          return;
+       }
+
        const handler = setTimeout(() => {
             const currentUsername = form.getValues("username");
             // Fetch only if username is valid and has actually changed (or on initial load with username)
             if (watchedUsername && watchedUsername === currentUsername && currentUsername.length > 0) {
                  console.log(`Debounced: Fetching photos for ${watchedUsername}`);
-                 fetchUserPhotos(watchedUsername, false); // Initial fetch is not user triggered
+                 fetchUserPhotos(watchedUsername, false); // Initial/debounced fetch is not user triggered
             } else if (!watchedUsername && !currentUsername) {
-                 // Clear photos if username becomes empty
-                 console.log("Debounced: Clearing fetched photos as username is empty.");
-                 setFetchedPhotos([]);
-                 setSelectedFetchedPhotoId(null);
-                 const currentPhotoValue = form.getValues("photo");
-                 // Clear selected photo only if it was a fetched one
-                 if (typeof currentPhotoValue === 'string' && currentPhotoValue.startsWith('http')) {
-                     form.setValue("photo", undefined, { shouldValidate: false });
-                     setSelectedPhotoPreview(null);
+                 // Clear photos if username becomes empty *after* being dirty
+                 if (form.formState.isDirty) {
+                     console.log("Debounced: Clearing fetched photos as username is empty.");
+                     setFetchedPhotos([]);
+                     setSelectedFetchedPhotoId(null);
+                     const currentPhotoValue = form.getValues("photo");
+                     // Clear selected photo only if it was a fetched one (URL)
+                     if (typeof currentPhotoValue === 'string' && currentPhotoValue.startsWith('http')) {
+                         form.setValue("photo", undefined, { shouldValidate: false });
+                         setSelectedPhotoPreview(null);
+                     }
                  }
             }
        }, 500); // Debounce time
@@ -466,7 +528,7 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
            clearTimeout(handler);
        };
    // eslint-disable-next-line react-hooks/exhaustive-deps
-   }, [watchedUsername, fetchUserPhotos]); // fetchUserPhotos is stable
+   }, [watchedUsername, fetchUserPhotos, form.formState.isDirty]); // Add form.formState.isDirty
 
 
   // Handle form submission
@@ -708,5 +770,3 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
     </TooltipProvider>
   );
 }
-
-
