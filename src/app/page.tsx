@@ -4,7 +4,7 @@ import path from 'path';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import AvatarGenerationForm, { type ImageOption } from '@/components/avatar-generation-form'; // Import ImageOption type
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { Info, Stars } from "lucide-react"; // Using Stars for a more anime feel
+import { Info, Stars, User } from "lucide-react"; // Using Stars for a more anime feel
 
 // Helper function to read images from a directory
 async function getDirectoryImages(dirPath: string, publicPath: string): Promise<ImageOption[]> {
@@ -40,20 +40,21 @@ export default async function Home() {
   const backgrounds = await getDirectoryImages('background', 'background'); // Corrected directory name
 
   return (
-    <div className="flex flex-col items-center justify-center space-y-4"> {/* Reduced space-y */}
+    <div className="flex flex-col items-center justify-center space-y-4">
        <h1 className="text-4xl font-bold text-center text-primary animate-pulse">
          🌸 櫻の畫室 🌸
        </h1>
-       <p className="text-center text-foreground/90 text-lg max-w-2xl"> {/* Changed text-muted-foreground */}
-         捕捉春天嘅氣息！上載你嘅靚相，揀件靚靚和服👘同埋夢幻背景，等我哋嘅AI幫你創造獨一無二嘅櫻花主題頭像啦！✨
+       <p className="text-center text-foreground/90 text-lg max-w-2xl">
+         捕捉春天嘅氣息！揀件靚靚和服👘同埋夢幻背景，等我哋嘅AI幫你創造獨一無二嘅櫻花主題頭像啦！✨
        </p>
 
        <Alert className="max-w-3xl w-full bg-secondary border-primary/50">
-          <Stars className="h-4 w-4 text-primary" /> {/* Changed icon */}
+          <Stars className="h-4 w-4 text-primary" />
           <AlertTitle className="text-primary font-semibold">點樣玩？</AlertTitle>
           <AlertDescription>
-            <ol className="list-decimal list-inside space-y-1 text-foreground/80 text-sm"> {/* Kept text-foreground/80 */}
-              <li>上載或者即刻影張靚相 📸</li>
+            <ol className="list-decimal list-inside space-y-1 text-foreground/80 text-sm">
+              <li><User className="inline-block h-4 w-4 mr-1" />入咗你個靚名先 (方便搵返啲相)</li>
+              <li>揀張相：你可以上載檔案、用QR Code手機上載、或者即刻影張靚相 📸</li>
               <li>喺下面揀件心水和服～ 👇</li>
               <li>再揀一個勁靚嘅背景 🏞️</li>
               <li>（可以唔填）加少少描述，等AI更get到你想要咩！</li>
@@ -64,10 +65,10 @@ export default async function Home() {
 
 
       <Card className="w-full max-w-3xl shadow-lg border-primary/30">
-        <CardHeader className="pb-2"> {/* Further reduced pb */}
-          <CardTitle className="text-xl text-center text-primary/90">整你嘅專屬頭像</CardTitle> {/* Smaller title */}
+        <CardHeader className="pb-2">
+          <CardTitle className="text-xl text-center text-primary/90">整你嘅專屬頭像</CardTitle>
         </CardHeader>
-        <CardContent className="p-4 pt-2"> {/* Reduced padding */}
+        <CardContent className="p-4 pt-2">
           {/* Pass fetched images to the form */}
           <AvatarGenerationForm kimonos={kimonos} backgrounds={backgrounds} />
         </CardContent>

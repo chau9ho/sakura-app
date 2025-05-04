@@ -1,10 +1,11 @@
 "use client";
 
-import React, { useState, useEffect, useTransition } from 'react';
+import React, { useState, useEffect, useTransition, useCallback } from 'react';
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import * as z from "zod";
 import Image from 'next/image';
+import QRCode from 'qrcode.react';
 import { Button } from "@/components/ui/button";
 import {
   Form,
@@ -20,21 +21,23 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { generateAvatarPrompt } from '@/ai/flows/generate-avatar-prompt';
-import { Loader2, Upload, Camera, Sparkles, Wand2, Image as ImageIcon, Shirt, Trees, Pencil, CheckCircle2 } from 'lucide-react'; // Added relevant icons
+import { Loader2, Upload, Camera, Sparkles, Wand2, Image as ImageIcon, Shirt, Trees, Pencil, CheckCircle2, User, QrCode, RefreshCw } from 'lucide-react'; // Added relevant icons
 import { Progress } from "@/components/ui/progress";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"; // Import Accordion components
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import { Skeleton } from "@/components/ui/skeleton"; // Import Skeleton
 
-// Define the type for image options passed as props
+// Define the type for image options passed as props or fetched
 export interface ImageOption {
-  id: string;
-  name: string;
-  src: string;
-  description: string;
-  dataAiHint: string;
+  id: string; // Can be filename or unique identifier
+  name: string; // Display name
+  src: string; // URL or data URI
+  description: string; // Description for AI or display
+  dataAiHint: string; // Hint for AI
 }
 
 // Define props for the component
@@ -44,8 +47,9 @@ interface AvatarGenerationFormProps {
 }
 
 const formSchema = z.object({
-  photo: z.any().refine(fileOrDataUrl => fileOrDataUrl instanceof File || (typeof fileOrDataUrl === 'string' && fileOrDataUrl.startsWith('data:image/')), {
-    message: "請上載或影張相。",
+  username: z.string().min(1, { message: "請輸入用戶名。" }),
+  photo: z.any().refine(fileOrDataUrl => fileOrDataUrl instanceof File || (typeof fileOrDataUrl === 'string' && (fileOrDataUrl.startsWith('data:image/') || fileOrDataUrl.startsWith('http'))), { // Allow http(s) URLs
+    message: "請上載、用QR碼上載、或影張相。",
   }),
   kimono: z.string().min(1, { message: "請揀一件和服。" }),
   background: z.string().min(1, { message: "請揀一個背景。" }),
@@ -62,11 +66,15 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
   const [isCapturing, setIsCapturing] = useState<boolean>(false);
   const videoRef = React.useRef<HTMLVideoElement>(null);
   const canvasRef = React.useRef<HTMLCanvasElement>(null);
-
+  const [isQrCodeDialogOpen, setIsQrCodeDialogOpen] = useState(false);
+  const [fetchedPhotos, setFetchedPhotos] = useState<ImageOption[]>([]);
+  const [isLoadingPhotos, setIsLoadingPhotos] = useState<boolean>(false);
+  const [selectedFetchedPhotoId, setSelectedFetchedPhotoId] = useState<string | null>(null);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
+      username: "",
       photo: undefined,
       kimono: "",
       background: "",
@@ -74,26 +82,141 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
     },
   });
 
-   // Watch form values to enable/disable accordion items and show checkmarks
+  // Watch form values
+  const watchedUsername = form.watch("username");
   const watchedPhoto = form.watch("photo");
   const watchedKimono = form.watch("kimono");
   const watchedBackground = form.watch("background");
 
-  // Handle photo selection for preview
-  const handlePhotoChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      form.setValue("photo", file);
+  const qrCodeUrl = watchedUsername
+    ? `https://upload-photo-dot-comfyuiserver2024.uc.r.appspot.com/?userName=${encodeURIComponent(watchedUsername)}`
+    : "";
+
+  // --- Photo Fetching Logic ---
+  const fetchUserPhotos = useCallback(async (username: string) => {
+    if (!username) return;
+    setIsLoadingPhotos(true);
+    setFetchedPhotos([]); // Clear previous photos
+    console.log(`Simulating fetching photos for user: ${username}`);
+    // **IMPORTANT:** Replace this simulation with actual API call to list/fetch photos
+    // This likely involves a backend endpoint that checks the GCP bucket for the user.
+    try {
+      // Simulate API call delay
+      await new Promise(resolve => setTimeout(resolve, 1500));
+
+      // Simulate finding some photos (replace with actual fetched data)
+      // Example structure - URLs should point to actual images in the bucket
+      const simulatedPhotos: ImageOption[] = [
+         // Example: Construct URL based on naming convention if possible
+         // This is fragile and depends heavily on the upload service's naming
+        {
+          id: `${username}_1.png`,
+          name: `上載圖片 1`,
+          src: `https://storage.googleapis.com/motherday/${username}_1745417437826.png`, // Example URL structure
+          description: `Uploaded photo 1 for ${username}`,
+          dataAiHint: 'uploaded portrait',
+        },
+         {
+          id: `${username}_2.jpg`,
+          name: `上載圖片 2`,
+          src: `https://storage.googleapis.com/motherday/${username}_another_timestamp.jpg`, // Another example
+          description: `Uploaded photo 2 for ${username}`,
+          dataAiHint: 'uploaded face',
+        },
+        // Add more simulated photos or fetch actual list
+        {
+           id: 'placeholder_random.png',
+           name: '示範圖片',
+           src: `https://picsum.photos/seed/${username}1/100/100`, // Use picsum as placeholder
+           description: `Placeholder photo for ${username}`,
+           dataAiHint: 'person face',
+         },
+          {
+           id: 'placeholder_random2.png',
+           name: '示範圖片 2',
+           src: `https://picsum.photos/seed/${username}2/100/100`, // Use picsum as placeholder
+           description: `Placeholder photo 2 for ${username}`,
+           dataAiHint: 'profile picture',
+         },
+
+      ];
+      // Filter out photos that might 404 immediately (basic check)
+      // More robust checking needed in real implementation
+       const validPhotos = await Promise.all(simulatedPhotos.map(async (photo) => {
+         try {
+           // Basic check: Try fetching headers (more lightweight than full image)
+           // Note: This might be blocked by CORS in a browser environment.
+           // A backend check is more reliable.
+           // const response = await fetch(photo.src, { method: 'HEAD', mode: 'no-cors' });
+           // Simulating validity for now
+           if (photo.src.includes('picsum')) return photo; // Keep picsum placeholders
+           // Assume others might be valid for demo
+           return photo;
+         } catch (e) {
+           console.warn(`Could not access ${photo.src}, skipping.`);
+           return null;
+         }
+       }));
+
+      setFetchedPhotos(validPhotos.filter(p => p !== null) as ImageOption[]);
+       if (validPhotos.filter(p => p !== null).length > 0) {
+         toast({
+            title: "圖片已載入",
+            description: `搵到 ${validPhotos.filter(p => p !== null).length} 張 ${username} 嘅相。`,
+         });
+       } else {
+          toast({
+            title: "未搵到圖片",
+            description: `暫時未搵到 ${username} 嘅相，試下用QR Code上載？`,
+            variant: "default" // Use default or custom variant
+         });
+       }
+
+
+    } catch (error) {
+      console.error("Error fetching user photos:", error);
+      toast({
+        title: "載入圖片失敗",
+        description: "嘗試載入用戶圖片時發生錯誤。",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoadingPhotos(false);
+    }
+  }, [toast]);
+
+
+  // Handle photo selection (from file upload, camera, or fetched photos)
+  const handlePhotoSelection = (source: 'file' | 'camera' | 'fetched', data: File | string | ImageOption) => {
+    stopCamera(); // Stop camera if running
+    setSelectedFetchedPhotoId(null); // Deselect any fetched photo
+
+    if (source === 'file' && data instanceof File) {
+      form.setValue("photo", data);
       const reader = new FileReader();
       reader.onloadend = () => {
         setSelectedPhotoPreview(reader.result as string);
       };
-      reader.readAsDataURL(file);
-      setIsCapturing(false); // Ensure camera is off if file is uploaded
-      stopCamera();
+      reader.readAsDataURL(data);
+    } else if (source === 'camera' && typeof data === 'string') {
+      form.setValue("photo", data); // data is dataUrl
+      setSelectedPhotoPreview(data);
+    } else if (source === 'fetched' && typeof data !== 'string' && !(data instanceof File)) {
+        form.setValue("photo", data.src); // Use the URL as the value
+        setSelectedPhotoPreview(data.src);
+        setSelectedFetchedPhotoId(data.id);
     } else {
-        form.setValue("photo", undefined);
-        setSelectedPhotoPreview(null);
+         form.setValue("photo", undefined);
+         setSelectedPhotoPreview(null);
+    }
+  };
+
+
+  // Handle direct file upload change
+  const handleFileUploadChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      handlePhotoSelection('file', file);
     }
   };
 
@@ -102,6 +225,7 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
     setIsCapturing(true);
     setSelectedPhotoPreview(null); // Clear file upload preview
     form.setValue("photo", undefined); // Clear file upload value
+    setSelectedFetchedPhotoId(null);
     if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ video: true });
@@ -133,19 +257,16 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
       const context = canvasRef.current.getContext('2d');
       const video = videoRef.current;
       if (context && video.readyState >= video.HAVE_CURRENT_DATA) {
-        // Set canvas dimensions based on video aspect ratio for capture
         const videoWidth = video.videoWidth;
         const videoHeight = video.videoHeight;
-        // Use a smaller dimension for capture if needed, maintaining aspect ratio
-        const captureWidth = 480; // Example smaller width
+        const captureWidth = 480;
         const captureHeight = (videoHeight / videoWidth) * captureWidth;
         canvasRef.current.width = captureWidth;
         canvasRef.current.height = captureHeight;
 
-        context.drawImage(video, 0, 0, captureWidth, captureHeight); // Draw smaller image
+        context.drawImage(video, 0, 0, captureWidth, captureHeight);
         const dataUrl = canvasRef.current.toDataURL('image/png');
-        setSelectedPhotoPreview(dataUrl);
-        form.setValue("photo", dataUrl);
+        handlePhotoSelection('camera', dataUrl);
         stopCamera();
       } else {
          toast({
@@ -158,21 +279,56 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
   };
 
    // Stop camera stream
-  const stopCamera = () => {
+   const stopCamera = useCallback(() => {
     if (videoRef.current && videoRef.current.srcObject) {
-      const stream = videoRef.current.srcObject as MediaStream;
-      stream.getTracks().forEach(track => track.stop());
-      videoRef.current.srcObject = null;
-    }
-    setIsCapturing(false);
-  };
+        try {
+            const stream = videoRef.current.srcObject as MediaStream;
+            stream.getTracks().forEach(track => track.stop());
+            videoRef.current.srcObject = null;
+         } catch (error) {
+            console.error("Error stopping camera stream:", error);
+         }
+     }
+     // Check if state update is needed
+     if (isCapturing) {
+         setIsCapturing(false);
+     }
+ }, [isCapturing]);
+
 
   // Cleanup camera on component unmount
   useEffect(() => {
     return () => {
       stopCamera();
     };
-  }, []);
+  }, [stopCamera]);
+
+  // Auto-fetch photos when username changes (debounced)
+   useEffect(() => {
+       if (watchedUsername) {
+           const handler = setTimeout(() => {
+               fetchUserPhotos(watchedUsername);
+           }, 500); // Debounce fetching by 500ms
+
+           return () => {
+               clearTimeout(handler);
+           };
+       } else {
+           // Clear photos if username is cleared
+           setFetchedPhotos([]);
+           setSelectedFetchedPhotoId(null);
+       }
+   }, [watchedUsername, fetchUserPhotos]);
+
+   // Auto-select first fetched photo if none is selected
+   useEffect(() => {
+       if (!watchedPhoto && fetchedPhotos.length > 0 && !selectedFetchedPhotoId) {
+           // handlePhotoSelection('fetched', fetchedPhotos[0]);
+           // Optionally auto-select the first photo
+           // console.log("Auto-selecting first fetched photo");
+       }
+   }, [watchedPhoto, fetchedPhotos, selectedFetchedPhotoId]);
+
 
 
   function onSubmit(values: z.infer<typeof formSchema>) {
@@ -185,6 +341,25 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
       }, 300);
 
       try {
+        // Ensure photo data is handled correctly (File or data URL or http URL)
+        let photoData: string | File = values.photo;
+        if (photoData instanceof File) {
+          // If it's a File, you might need to read it as a data URL depending on the AI flow requirement
+          // For this example, let's assume the AI flow can handle the file name/placeholder
+           console.log("Using uploaded file:", photoData.name);
+           // If generateAvatarPrompt needs data URL, convert here:
+           // const dataUrl = await new Promise<string>((resolve, reject) => {
+           //   const reader = new FileReader();
+           //   reader.onloadend = () => resolve(reader.result as string);
+           //   reader.onerror = reject;
+           //   reader.readAsDataURL(photoData as File);
+           // });
+           // photoData = dataUrl; // Uncomment if data URL is needed
+        } else {
+           console.log("Using photo from camera/fetched URL/data URL");
+        }
+
+
         const selectedKimono = kimonos.find(k => k.id === values.kimono);
         const selectedBackground = backgrounds.find(b => b.id === values.background);
 
@@ -200,6 +375,7 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
         }
 
         setProgress(10);
+        // Generate the prompt using the AI flow
         const promptResult = await generateAvatarPrompt({
           kimono: selectedKimono.description,
           background: selectedBackground.description,
@@ -213,18 +389,56 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
             description: `用緊呢個提示: ${promptResult.prompt.substring(0, 50)}...`,
          });
 
+         // --- Actual Image Generation Call (Placeholder) ---
+         // TODO: Replace this section with the actual Genkit image generation call
+         //       using the promptResult.prompt and the selected photo (photoData).
+         //       Make sure to handle the image data correctly (e.g., as data URI if needed).
+        console.log("準備調用圖像生成...");
+        console.log("將使用提示:", promptResult.prompt);
+        console.log("將使用圖片:", photoData instanceof File ? photoData.name : (typeof photoData === 'string' ? photoData.substring(0, 50)+'...' : '未知圖片來源'));
 
-        console.log("模擬緊圖像生成，用咗:", {
-          prompt: promptResult.prompt,
-          photo: values.photo instanceof File ? values.photo.name : "影咗嘅相",
-        });
+        // Example using ai.generate with Gemini 2.0 Flash experimental image generation
+        // Note: Requires proper setup and potentially passing the image as context.
+        // let generatedImageResultUrl = null;
+        // try {
+        //   const { media } = await ai.generate({
+        //      model: 'googleai/gemini-2.0-flash-exp', // Use the correct model
+        //      prompt: [
+        //        // Include the uploaded/captured photo as context if needed by the model/prompt
+        //        // This might require converting the File to a data URI first
+        //        // { media: { url: photoData } }, // Assuming photoData is a data URI or accessible URL
+        //        { text: promptResult.prompt }
+        //      ],
+        //      config: {
+        //        responseModalities: ['TEXT', 'IMAGE'],
+        //      },
+        //   });
+        //   generatedImageResultUrl = media?.url; // This will be a data URI (e.g., "data:image/png;base64,...")
+        //   console.log("圖像生成成功:", generatedImageResultUrl ? generatedImageResultUrl.substring(0, 60)+'...' : '無結果');
+        //   setProgress(90);
+        // } catch (genError) {
+        //   console.error("圖像生成失敗:", genError);
+        //   toast({
+        //     title: "圖像生成失敗",
+        //     description: "調用AI生成圖像時發生錯誤。",
+        //     variant: "destructive",
+        //   });
+        //   clearInterval(interval);
+        //   setProgress(0);
+        //   return;
+        // }
 
-        await new Promise(resolve => setTimeout(resolve, 2000));
-         setProgress(90);
-
+        // --- Using Placeholder Image Generation ---
+        console.log("模擬圖像生成中...");
+        await new Promise(resolve => setTimeout(resolve, 2000)); // Simulate delay
+        setProgress(90);
         const simulatedImageUrl = `https://picsum.photos/512/512?random=${Date.now()}`;
-        setGeneratedImageUrl(simulatedImageUrl);
+        // generatedImageResultUrl = simulatedImageUrl; // Use placeholder
+
+        setGeneratedImageUrl(simulatedImageUrl); // Replace with generatedImageResultUrl when using real generation
         setProgress(100);
+        // --- End Placeholder ---
+
 
         toast({
           title: "頭像生成完成！",
@@ -232,7 +446,7 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
         });
 
       } catch (error) {
-        console.error("生成頭像出錯:", error);
+        console.error("生成頭像過程出錯:", error);
         toast({
           title: "生成失敗",
           description: error instanceof Error ? error.message : "發生咗啲意料之外嘅錯誤。",
@@ -248,13 +462,35 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
   return (
     <TooltipProvider delayDuration={100}>
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-2"> {/* Reduced space-y */}
+      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-2">
 
+         {/* --- Username Section --- */}
+         <FormField
+            control={form.control}
+            name="username"
+            render={({ field }) => (
+                <FormItem className="px-2">
+                <FormLabel className="text-base font-semibold flex items-center gap-2">
+                    <User className="h-5 w-5" />
+                    步驟零：入個靚名
+                </FormLabel>
+                <FormControl>
+                    <Input placeholder="例如：櫻花武士" {...field} className="text-sm" />
+                </FormControl>
+                <FormDescription className="text-xs text-foreground/80 pt-1">
+                    呢個名會用嚟幫你搵返上載咗嘅相。
+                </FormDescription>
+                <FormMessage />
+                </FormItem>
+            )}
+          />
+
+        {/* --- Accordion for Steps --- */}
         <Accordion type="single" collapsible defaultValue="photo-section" className="w-full space-y-1">
 
            {/* --- Photo Section --- */}
-           <AccordionItem value="photo-section">
-             <AccordionTrigger className="text-base font-semibold hover:no-underline px-2 py-2 rounded-md hover:bg-secondary/50 data-[state=open]:bg-secondary/80">
+           <AccordionItem value="photo-section" disabled={!watchedUsername}>
+             <AccordionTrigger className="text-base font-semibold hover:no-underline px-2 py-2 rounded-md hover:bg-secondary/50 data-[state=open]:bg-secondary/80 disabled:opacity-50">
                 <span className="flex items-center gap-2">
                   <ImageIcon className="h-5 w-5" />
                    步驟一：你嘅相
@@ -268,63 +504,149 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
                   render={({ field }) => (
                     <FormItem>
                       <FormControl>
-                        <div className="flex flex-col sm:flex-row gap-2 items-start">
-                          <div className="flex-1 space-y-1">
-                             {/* Reduced size: aspect-square and max-w-xs */}
-                             <div className="relative w-full max-w-xs mx-auto aspect-square border border-dashed border-primary/50 rounded-lg flex items-center justify-center bg-secondary/50 overflow-hidden">
-                                {selectedPhotoPreview ? (
-                                <Image
-                                    src={selectedPhotoPreview}
-                                    alt="已選相片預覽"
-                                    fill
-                                    objectFit="contain"
-                                 />
-                                ) : isCapturing ? (
-                                     <video ref={videoRef} className="w-full h-full object-cover" autoPlay playsInline muted />
-                                ) : (
-                                    <div className="text-center text-foreground/80 p-2">
-                                        <Upload className="mx-auto h-6 w-6 mb-1" />
-                                        <span className="text-xs">上載或影張相</span>
+                         <div>
+                            {/* --- Upload/Camera Options --- */}
+                            <div className="flex flex-col sm:flex-row gap-2 items-start mb-3">
+                                <div className="flex-1 space-y-1">
+                                    {/* Preview Area */}
+                                    <div className="relative w-full max-w-xs mx-auto aspect-square border border-dashed border-primary/50 rounded-lg flex items-center justify-center bg-secondary/50 overflow-hidden">
+                                        {selectedPhotoPreview ? (
+                                        <Image
+                                            src={selectedPhotoPreview}
+                                            alt="已選相片預覽"
+                                            fill
+                                            objectFit="contain"
+                                        />
+                                        ) : isCapturing ? (
+                                            <video ref={videoRef} className="w-full h-full object-cover" autoPlay playsInline muted />
+                                        ) : (
+                                            <div className="text-center text-foreground/80 p-2">
+                                                <ImageIcon className="mx-auto h-6 w-6 mb-1" />
+                                                <span className="text-xs">預覽會喺度顯示</span>
+                                            </div>
+                                        )}
+                                        {!isCapturing && <video ref={videoRef} className="absolute w-px h-px opacity-0 pointer-events-none" playsInline muted />}
                                     </div>
-                                )}
-                                {!isCapturing && <video ref={videoRef} className="absolute w-px h-px opacity-0 pointer-events-none" playsInline muted />}
-                             </div>
-                             <canvas ref={canvasRef} style={{ display: 'none' }}></canvas>
+                                    <canvas ref={canvasRef} style={{ display: 'none' }}></canvas>
 
-                              <div className="flex gap-1.5 max-w-xs mx-auto">
-                                  {!isCapturing ? (
-                                    <>
-                                      <Button type="button" variant="outline" size="sm" className="flex-1 relative text-xs h-8 px-2">
-                                         <Upload className="mr-1 h-3.5 w-3.5" />
-                                         上載
-                                         <Input
-                                            type="file"
-                                            accept="image/*"
-                                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                                            onChange={handlePhotoChange}
-                                          />
-                                      </Button>
-                                      <Button type="button" variant="outline" size="sm" className="flex-1 text-xs h-8 px-2" onClick={startCamera}>
-                                        <Camera className="mr-1 h-3.5 w-3.5" />
-                                        影相
-                                      </Button>
-                                    </>
-                                  ) : (
-                                     <>
-                                      <Button type="button" variant="secondary" size="sm" className="flex-1 text-xs h-8 px-2" onClick={stopCamera}>
-                                        取消
-                                      </Button>
-                                      <Button type="button" variant="default" size="sm" className="flex-1 text-xs h-8 px-2" onClick={capturePhoto}>
-                                         影啦！
-                                      </Button>
-                                     </>
-                                  )}
-                               </div>
-                           </div>
+                                    {/* Action Buttons */}
+                                    <div className="flex gap-1.5 max-w-xs mx-auto">
+                                        {!isCapturing ? (
+                                            <>
+                                            {/* File Upload Button */}
+                                            <Button type="button" variant="outline" size="sm" className="flex-1 relative text-xs h-8 px-2">
+                                                <Upload className="mr-1 h-3.5 w-3.5" />
+                                                上載檔案
+                                                <Input
+                                                    type="file"
+                                                    accept="image/*"
+                                                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                                                    onChange={handleFileUploadChange}
+                                                />
+                                            </Button>
+                                            {/* QR Code Upload Button */}
+                                            <Dialog open={isQrCodeDialogOpen} onOpenChange={setIsQrCodeDialogOpen}>
+                                                <DialogTrigger asChild>
+                                                    <Button type="button" variant="outline" size="sm" className="flex-1 text-xs h-8 px-2" disabled={!watchedUsername}>
+                                                        <QrCode className="mr-1 h-3.5 w-3.5" />
+                                                        QR Code
+                                                    </Button>
+                                                </DialogTrigger>
+                                                <DialogContent className="sm:max-w-md">
+                                                    <DialogHeader>
+                                                    <DialogTitle>用手機上載相片</DialogTitle>
+                                                    <DialogDescription>
+                                                        用你嘅手機掃描呢個QR Code，就可以直接上載相片到你嘅用戶名「{watchedUsername}」底下。上載完成後，撳下面嘅「重新整理」掣。
+                                                    </DialogDescription>
+                                                    </DialogHeader>
+                                                    <div className="flex items-center justify-center py-4">
+                                                    {qrCodeUrl ? (
+                                                        <QRCode value={qrCodeUrl} size={200} level="H" />
+                                                    ) : (
+                                                        <p className="text-destructive">請先輸入用戶名。</p>
+                                                    )}
+                                                    </div>
+                                                     <Button type="button" variant="default" size="sm" onClick={() => fetchUserPhotos(watchedUsername)} disabled={isLoadingPhotos || !watchedUsername}>
+                                                         {isLoadingPhotos ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+                                                         重新整理上載列表
+                                                    </Button>
+                                                </DialogContent>
+                                            </Dialog>
+                                            {/* Camera Button */}
+                                            <Button type="button" variant="outline" size="sm" className="flex-1 text-xs h-8 px-2" onClick={startCamera}>
+                                                <Camera className="mr-1 h-3.5 w-3.5" />
+                                                影相
+                                            </Button>
+                                            </>
+                                        ) : (
+                                            // Camera Capture/Cancel Buttons
+                                            <>
+                                            <Button type="button" variant="secondary" size="sm" className="flex-1 text-xs h-8 px-2" onClick={stopCamera}>
+                                                取消
+                                            </Button>
+                                            <Button type="button" variant="default" size="sm" className="flex-1 text-xs h-8 px-2" onClick={capturePhoto}>
+                                                影啦！
+                                            </Button>
+                                            </>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+
+                             {/* --- Fetched Photos Section --- */}
+                              {watchedUsername && (
+                                <div className="mt-2 pt-2 border-t border-border">
+                                    <div className="flex justify-between items-center mb-1 px-1">
+                                        <FormLabel className="text-sm font-medium">已上載嘅相</FormLabel>
+                                        <Button type="button" variant="ghost" size="sm" onClick={() => fetchUserPhotos(watchedUsername)} disabled={isLoadingPhotos} className="h-7 px-2 text-xs">
+                                            {isLoadingPhotos ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="mr-1 h-3.5 w-3.5" />}
+                                            重新整理
+                                        </Button>
+                                    </div>
+                                     <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 gap-1.5">
+                                        {isLoadingPhotos ? (
+                                            Array.from({ length: 4 }).map((_, idx) => (
+                                                 <Skeleton key={`skel-${idx}`} className="aspect-square rounded-md bg-muted/50" />
+                                             ))
+                                        ) : fetchedPhotos.length > 0 ? (
+                                             fetchedPhotos.map((photo) => (
+                                                 <button
+                                                    key={photo.id}
+                                                    type="button"
+                                                    onClick={() => handlePhotoSelection('fetched', photo)}
+                                                    className={cn(
+                                                        "relative aspect-square rounded-md overflow-hidden border-2 transition-all focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
+                                                        selectedFetchedPhotoId === photo.id ? "border-primary ring-2 ring-primary/50" : "border-muted hover:border-accent"
+                                                    )}
+                                                 >
+                                                    <Image
+                                                        src={photo.src}
+                                                        alt={photo.name}
+                                                        fill
+                                                        sizes="(max-width: 640px) 20vw, (max-width: 768px) 16vw, 12vw" // Adjust sizes
+                                                        className="object-cover"
+                                                        onError={(e) => { e.currentTarget.style.display = 'none'; /* Hide broken images */ }}
+                                                    />
+                                                    {selectedFetchedPhotoId === photo.id && (
+                                                        <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                                                            <CheckCircle2 className="h-6 w-6 text-primary-foreground" />
+                                                        </div>
+                                                    )}
+                                                </button>
+                                             ))
+                                        ) : (
+                                            <p className="col-span-full text-xs text-center text-foreground/80 py-2">
+                                                未搵到用戶「{watchedUsername}」嘅相。試下用 QR code 上載？
+                                            </p>
+                                        )}
+                                     </div>
+                                </div>
+                             )}
+
                         </div>
                       </FormControl>
-                      <FormDescription className="text-xs text-foreground/80 px-1 pt-1">
-                        上載張清啲嘅大頭相，或者用相機即刻影返張。
+                       <FormDescription className="text-xs text-foreground/80 px-1 pt-1">
+                        用上面嘅方法揀一張相，或者揀返之前上載過嘅相。
                       </FormDescription>
                       <FormMessage className="px-1"/>
                     </FormItem>
@@ -367,7 +689,7 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
                                   <FormLabel
                                     htmlFor={`kimono-${kimono.id}`}
                                     className={cn(
-                                      "block cursor-pointer rounded-md border-2 border-muted bg-popover transition-all duration-200 ease-in-out overflow-hidden", // Added overflow-hidden
+                                      "block cursor-pointer rounded-md border-2 border-muted bg-popover transition-all duration-200 ease-in-out overflow-hidden",
                                       "hover:border-accent hover:shadow-md",
                                       "peer-data-[state=checked]:border-primary peer-data-[state=checked]:ring-2 peer-data-[state=checked]:ring-primary/50 peer-data-[state=checked]:shadow-lg"
                                     )}
@@ -378,18 +700,18 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
                                         alt={kimono.name}
                                         width={100}
                                         height={100}
-                                        className="h-full w-full object-cover transition-transform duration-300 ease-out group-hover:scale-110" // Enhanced zoom
+                                        className="h-full w-full object-cover transition-transform duration-300 ease-out group-hover:scale-110"
                                         data-ai-hint={kimono.dataAiHint}
                                       />
                                     </div>
                                     <p className="truncate text-[10px] font-medium text-center p-0.5 bg-muted/50 rounded-b-md">{kimono.name}</p>
                                   </FormLabel>
                                 </TooltipTrigger>
-                                <TooltipContent side="bottom" className="p-0 border-none bg-transparent shadow-xl w-[250px] h-[250px] flex items-center justify-center"> {/* Larger tooltip content */}
+                                <TooltipContent side="bottom" className="p-0 border-none bg-transparent shadow-xl w-[250px] h-[250px] flex items-center justify-center">
                                   <Image
                                      src={kimono.src}
                                      alt={kimono.name}
-                                     width={250} // Larger preview size
+                                     width={250}
                                      height={250}
                                      className="rounded-md object-cover"
                                      data-ai-hint={kimono.dataAiHint}
@@ -441,7 +763,7 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
                                        <FormLabel
                                          htmlFor={`bg-${bg.id}`}
                                          className={cn(
-                                            "block cursor-pointer rounded-md border-2 border-muted bg-popover transition-all duration-200 ease-in-out overflow-hidden", // Added overflow-hidden
+                                            "block cursor-pointer rounded-md border-2 border-muted bg-popover transition-all duration-200 ease-in-out overflow-hidden",
                                             "hover:border-accent hover:shadow-md",
                                             "peer-data-[state=checked]:border-primary peer-data-[state=checked]:ring-2 peer-data-[state=checked]:ring-primary/50 peer-data-[state=checked]:shadow-lg"
                                          )}
@@ -452,18 +774,18 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
                                                alt={bg.name}
                                                width={100}
                                                height={150}
-                                               className="h-full w-full object-cover transition-transform duration-300 ease-out group-hover:scale-110" // Enhanced zoom
+                                               className="h-full w-full object-cover transition-transform duration-300 ease-out group-hover:scale-110"
                                                data-ai-hint={bg.dataAiHint}
                                               />
                                            </div>
                                            <p className="truncate text-[10px] font-medium text-center p-0.5 bg-muted/50 rounded-b-md">{bg.name}</p>
                                        </FormLabel>
                                     </TooltipTrigger>
-                                    <TooltipContent side="bottom" className="p-0 border-none bg-transparent shadow-xl w-[200px] h-[300px] flex items-center justify-center"> {/* Larger tooltip, 2:3 ratio */}
+                                    <TooltipContent side="bottom" className="p-0 border-none bg-transparent shadow-xl w-[200px] h-[300px] flex items-center justify-center">
                                         <Image
                                          src={bg.src}
                                          alt={bg.name}
-                                         width={200} // Larger preview size
+                                         width={200}
                                          height={300}
                                          className="rounded-md object-cover"
                                          data-ai-hint={bg.dataAiHint}
@@ -520,7 +842,7 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
         <div className="space-y-1.5 pt-2 px-2">
            <Button
              type="submit"
-             disabled={isPending || !watchedPhoto || !watchedKimono || !watchedBackground} // Disable if steps not complete
+             disabled={isPending || !watchedPhoto || !watchedKimono || !watchedBackground}
              className="w-full bg-accent hover:bg-accent/90 text-accent-foreground h-10 text-base"
             >
               {isPending ? (
@@ -555,7 +877,7 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
                     你嘅靚靚櫻花頭像整好喇！右掣或者長按就可以儲存。
                   </AlertDescription>
                 </Alert>
-              <div className="aspect-square relative w-full max-w-[300px] mx-auto rounded-lg overflow-hidden shadow-md"> {/* Even smaller max-w */}
+              <div className="aspect-square relative w-full max-w-[300px] mx-auto rounded-lg overflow-hidden shadow-md">
                 <Image
                   src={generatedImageUrl}
                   alt="生成嘅頭像"
@@ -566,12 +888,14 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
               </div>
                <Button
                     variant="outline"
-                    size="sm" // Smaller button
+                    size="sm"
                     className="w-full mt-2 text-sm h-9"
                     onClick={() => {
                         setGeneratedImageUrl(null);
-                        form.reset();
+                        form.reset(); // Reset form including username
                         setSelectedPhotoPreview(null);
+                        setFetchedPhotos([]); // Clear fetched photos
+                        setSelectedFetchedPhotoId(null);
                      }}
                     >
                     再整一個！
