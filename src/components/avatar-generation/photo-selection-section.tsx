@@ -26,7 +26,7 @@ interface PhotoSelectionSectionProps {
   isQrCodeDialogOpen: boolean;
   setIsQrCodeDialogOpen: (isOpen: boolean) => void;
   qrCodeUrl: string;
-  fetchUserPhotos: (username: string) => Promise<void>;
+  fetchUserPhotos: (username: string, isUserTriggered?: boolean) => Promise<void>; // Updated signature
   isFetchingPhotos: boolean;
   fetchedPhotos: ImageOption[];
   selectedFetchedPhotoId: string | null;
@@ -160,7 +160,7 @@ const PhotoSelectionSection: React.FC<PhotoSelectionSectionProps> = ({
                                     <p className="text-destructive">請先輸入用戶名。</p>
                                   )}
                                 </div>
-                                <Button type="button" variant="default" size="sm" onClick={() => fetchUserPhotos(watchedUsername)} disabled={isFetchingPhotos || !watchedUsername}>
+                                <Button type="button" variant="default" size="sm" onClick={() => fetchUserPhotos(watchedUsername, true)} disabled={isFetchingPhotos || !watchedUsername}>
                                   {isFetchingPhotos ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
                                   重新整理上載列表
                                 </Button>
@@ -199,7 +199,7 @@ const PhotoSelectionSection: React.FC<PhotoSelectionSectionProps> = ({
                     <div className="mt-2 pt-2 border-t border-border">
                       <div className="flex justify-between items-center mb-1 px-1">
                         <FormLabel className="text-sm font-medium">已上載嘅相</FormLabel>
-                        <Button type="button" variant="ghost" size="sm" onClick={() => fetchUserPhotos(watchedUsername)} disabled={isFetchingPhotos} className="h-7 px-2 text-xs">
+                        <Button type="button" variant="ghost" size="sm" onClick={() => fetchUserPhotos(watchedUsername, true)} disabled={isFetchingPhotos} className="h-7 px-2 text-xs">
                           {isFetchingPhotos ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="mr-1 h-3.5 w-3.5" />}
                           整理
                         </Button>
@@ -241,7 +241,8 @@ const PhotoSelectionSection: React.FC<PhotoSelectionSectionProps> = ({
                           ))
                         ) : (
                           <p className="col-span-full text-xs text-center text-foreground/80 py-2">
-                            未搵到用戶「{watchedUsername}」嘅相。試下用 QR code 上載？
+                             {/* Only show this if NOT actively fetching */}
+                             {!isFetchingPhotos && `未搵到用戶「${watchedUsername}」嘅相。試下用 QR code 上載？`}
                           </p>
                         )}
                       </div>
