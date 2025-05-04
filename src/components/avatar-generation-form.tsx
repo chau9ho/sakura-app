@@ -17,13 +17,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"; // Import RadioGroup
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { generateAvatarPrompt } from '@/ai/flows/generate-avatar-prompt';
@@ -32,76 +26,34 @@ import { Progress } from "@/components/ui/progress";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"; // Import Tooltip components
+import { cn } from "@/lib/utils"; // Import cn utility
 
-// More diverse and anime-inspired options
-const kimonos = [
-  { id: 'k1', name: '經典粉櫻', description: '傳統粉紅色櫻花圖案和服', image: 'https://picsum.photos/100/100?random=1' , dataAiHint: 'pink sakura kimono' },
-  { id: 'k2', name: '優雅藍浪', description: '深藍色配上藝術感波浪紋和服', image: 'https://picsum.photos/100/100?random=2', dataAiHint: 'blue wave kimono' },
-  { id: 'k3', name: '華麗金鶴', description: '奢華金白色配仙鶴圖案和服', image: 'https://picsum.photos/100/100?random=3', dataAiHint: 'gold crane kimono' },
-  { id: 'k4', name: '春綠竹影', description: '淺綠色配雅緻竹葉圖案和服', image: 'https://picsum.photos/100/100?random=4', dataAiHint: 'green bamboo kimono' },
-  { id: 'k5', name: '魔法少女星願', description: '閃亮星星同絲帶裝飾嘅魔法少女風和服', image: 'https://picsum.photos/100/100?random=9', dataAiHint: 'magical girl star kimono' },
-  { id: 'k6', name: '賽博武士赤紅', description: '未來感線條同霓虹燈效果嘅武士風和服', image: 'https://picsum.photos/100/100?random=10', dataAiHint: 'cyberpunk samurai kimono' },
-  { id: 'k7', name: '暗夜蝶舞', description: '深紫色配上神秘蝴蝶圖案嘅和服', image: 'https://picsum.photos/100/100?random=11', dataAiHint: 'dark butterfly kimono' },
-];
+// Define the type for image options passed as props
+export interface ImageOption {
+  id: string;
+  name: string;
+  src: string; // Changed from 'image' to 'src' to match fetched data
+  description: string;
+  dataAiHint: string;
+}
 
-const backgrounds = [
-  { id: 'b1', name: '櫻花公園小徑', description: '寧靜嘅公園小徑，兩旁開滿櫻花樹', image: 'https://picsum.photos/100/100?random=5', dataAiHint: 'sakura park path' },
-  { id: 'b2', name: '山頂寺廟景觀', description: '傳統寺廟，俯瞰雲霧繚繞嘅山巒', image: 'https://picsum.photos/100/100?random=6', dataAiHint: 'mountain temple view' },
-  { id: 'b3', name: '夜祭燈籠街', description: '充滿活力嘅夜市祭典，掛滿發光燈籠', image: 'https://picsum.photos/100/100?random=7', dataAiHint: 'night festival lanterns' },
-  { id: 'b4', name: '禪意庭園小橋', description: '寧靜嘅禪意庭園，有木橋橫跨錦鯉池', image: 'https://picsum.photos/100/100?random=8', dataAiHint: 'zen garden bridge' },
-  { id: 'b5', name: '異世界漂浮島', description: '懸浮喺空中嘅奇幻島嶼，有瀑布流下', image: 'https://picsum.photos/100/100?random=12', dataAiHint: 'fantasy floating island' },
-  { id: 'b6', name: '星空下的鳥居', description: '喺璀璨星空下嘅神秘紅色鳥居', image: 'https://picsum.photos/100/100?random=13', dataAiHint: 'starry sky torii gate' },
-  { id: 'b7', name: '蒸汽龐克都市', description: '充滿齒輪、管道同飛行船嘅復古未來都市', image: 'https://picsum.photos/100/100?random=14', dataAiHint: 'steampunk city' },
-];
+// Define props for the component
+interface AvatarGenerationFormProps {
+  kimonos: ImageOption[];
+  backgrounds: ImageOption[];
+}
 
 const formSchema = z.object({
-  photo: z.any().refine(file => file instanceof File || typeof file === 'string', {
+  photo: z.any().refine(fileOrDataUrl => fileOrDataUrl instanceof File || (typeof fileOrDataUrl === 'string' && fileOrDataUrl.startsWith('data:image/')), {
     message: "請上載或影張相。",
   }),
-  kimono: z.string().min(1, { message: "請揀一件和服。" }),
-  background: z.string().min(1, { message: "請揀一個背景。" }),
+  kimono: z.string().min(1, { message: "請揀一件和服。" }), // Store the ID (filename)
+  background: z.string().min(1, { message: "請揀一個背景。" }), // Store the ID (filename)
   userDescription: z.string().max(150, { message: "描述唔可以超過150個字。" }).optional(),
 });
 
-// Helper component for displaying selectable image with tooltip zoom
-const SelectableImageItem = ({ item, type }: { item: { id: string, name: string, description: string, image: string, dataAiHint: string }, type: 'kimono' | 'background' }) => (
-  <SelectItem key={item.id} value={item.id}>
-    <TooltipProvider delayDuration={100}>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <div className="flex items-center gap-2 py-1 cursor-pointer">
-            <Image
-              src={item.image}
-              alt={item.name}
-              width={36} // Slightly smaller thumbnail
-              height={36}
-              className="rounded-sm shrink-0"
-              data-ai-hint={item.dataAiHint}
-            />
-            <div className="flex-1 min-w-0"> {/* Ensure text doesn't overflow */}
-              <p className="font-medium text-sm truncate">{item.name}</p> {/* Truncate long names */}
-              {/* <p className="text-xs text-muted-foreground truncate">{item.description}</p> */} {/* Optionally hide description in dropdown */}
-            </div>
-          </div>
-        </TooltipTrigger>
-        <TooltipContent side="right" className="p-0 border-none bg-transparent shadow-xl">
-          <Image
-            src={item.image}
-            alt={item.name}
-            width={200} // Larger preview size
-            height={200}
-            className="rounded-md"
-            data-ai-hint={item.dataAiHint}
-          />
-          <p className="mt-1 text-center text-sm font-medium bg-background/80 backdrop-blur-sm px-2 py-1 rounded-b-md">{item.name}</p>
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
-  </SelectItem>
-);
 
-
-export default function AvatarGenerationForm() {
+export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }: AvatarGenerationFormProps) {
   const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
   const [generatedImageUrl, setGeneratedImageUrl] = useState<string | null>(null);
@@ -186,7 +138,7 @@ export default function AvatarGenerationForm() {
         context.drawImage(video, 0, 0, videoWidth, videoHeight);
         const dataUrl = canvasRef.current.toDataURL('image/png');
         setSelectedPhotoPreview(dataUrl); // Show captured photo preview
-        form.setValue("photo", dataUrl); // Set form value to data URL
+        form.setValue("photo", dataUrl); // Set form value to data URL string
         stopCamera(); // Stop camera after capture
       } else {
          toast({
@@ -227,18 +179,26 @@ export default function AvatarGenerationForm() {
       }, 300); // Faster progress simulation
 
       try {
+        // Find the selected item details using the ID (filename) stored in the form values
         const selectedKimono = kimonos.find(k => k.id === values.kimono);
         const selectedBackground = backgrounds.find(b => b.id === values.background);
 
         if (!selectedKimono || !selectedBackground) {
-          throw new Error("揀嘅和服或者背景唔啱。");
+          toast({
+             title: "選擇錯誤",
+             description: "請確認你已經選擇咗和服同背景。",
+             variant: "destructive",
+          });
+          clearInterval(interval);
+          setProgress(0);
+          return; // Stop submission if items not found
         }
 
         // 1. Generate Prompt using AI Flow
-         setProgress(10);
+        setProgress(10);
         const promptResult = await generateAvatarPrompt({
-          kimono: selectedKimono.description,
-          background: selectedBackground.description,
+          kimono: selectedKimono.description, // Pass description to the flow
+          background: selectedBackground.description, // Pass description to the flow
           userDescription: values.userDescription,
         });
          setProgress(30);
@@ -288,7 +248,7 @@ export default function AvatarGenerationForm() {
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6"> {/* Reduced space-y */}
+      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4"> {/* Reduced space-y */}
 
         {/* Photo Input */}
          <FormField
@@ -296,11 +256,11 @@ export default function AvatarGenerationForm() {
           name="photo"
           render={({ field }) => (
             <FormItem>
-              <FormLabel className="text-lg font-semibold">你嘅相</FormLabel>
+              <FormLabel className="text-base font-semibold">你嘅相</FormLabel> {/* Slightly smaller label */}
               <FormControl>
-                <div className="flex flex-col sm:flex-row gap-4 items-start">
+                <div className="flex flex-col sm:flex-row gap-3 items-start"> {/* Reduced gap */}
                   <div className="flex-1 space-y-2">
-                     <div className="relative w-full aspect-video border border-dashed border-primary/50 rounded-lg flex items-center justify-center bg-secondary/50 overflow-hidden">
+                     <div className="relative w-full aspect-[4/3] border border-dashed border-primary/50 rounded-lg flex items-center justify-center bg-secondary/50 overflow-hidden"> {/* Changed aspect ratio */}
                         {selectedPhotoPreview ? (
                         <Image
                             src={selectedPhotoPreview}
@@ -309,26 +269,23 @@ export default function AvatarGenerationForm() {
                             objectFit="contain"
                          />
                         ) : isCapturing ? (
-                            // Ensure video tag is always rendered for the ref
                              <video ref={videoRef} className="w-full h-full object-cover" autoPlay playsInline muted />
                         ) : (
-                            <div className="text-center text-muted-foreground p-4">
-                                <Upload className="mx-auto h-10 w-10 mb-2" /> {/* Smaller icon */}
-                                <span>上載或影張相</span>
+                            <div className="text-center text-muted-foreground p-3"> {/* Reduced padding */}
+                                <Upload className="mx-auto h-8 w-8 mb-1" /> {/* Smaller icon */}
+                                <span className="text-sm">上載或影張相</span> {/* Smaller text */}
                             </div>
                         )}
-                        {/* Always render video tag for ref, hide if not capturing */}
                         {!isCapturing && <video ref={videoRef} className="absolute w-px h-px opacity-0 pointer-events-none" playsInline muted />}
                      </div>
-                      {/* Hidden canvas for capturing photo */}
                      <canvas ref={canvasRef} style={{ display: 'none' }}></canvas>
 
                      {/* Action Buttons */}
                       <div className="flex gap-2">
                           {!isCapturing ? (
                             <>
-                              <Button type="button" variant="outline" className="flex-1 relative text-sm h-9"> {/* Compact button */}
-                                 <Upload className="mr-1.5 h-4 w-4" />
+                              <Button type="button" variant="outline" className="flex-1 relative text-xs h-8 px-2"> {/* Compact button */}
+                                 <Upload className="mr-1 h-3.5 w-3.5" />
                                  上載相片
                                  <Input
                                     type="file"
@@ -337,17 +294,17 @@ export default function AvatarGenerationForm() {
                                     onChange={handlePhotoChange}
                                   />
                               </Button>
-                              <Button type="button" variant="outline" className="flex-1 text-sm h-9" onClick={startCamera}> {/* Compact button */}
-                                <Camera className="mr-1.5 h-4 w-4" />
+                              <Button type="button" variant="outline" className="flex-1 text-xs h-8 px-2" onClick={startCamera}> {/* Compact button */}
+                                <Camera className="mr-1 h-3.5 w-3.5" />
                                 即刻影相
                               </Button>
                             </>
                           ) : (
                              <>
-                              <Button type="button" variant="secondary" className="flex-1 text-sm h-9" onClick={stopCamera}> {/* Changed Cancel to secondary */}
+                              <Button type="button" variant="secondary" className="flex-1 text-xs h-8 px-2" onClick={stopCamera}>
                                 取消
                               </Button>
-                              <Button type="button" variant="default" className="flex-1 text-sm h-9" onClick={capturePhoto}>
+                              <Button type="button" variant="default" className="flex-1 text-xs h-8 px-2" onClick={capturePhoto}>
                                  影啦！
                               </Button>
                              </>
@@ -356,7 +313,7 @@ export default function AvatarGenerationForm() {
                    </div>
                 </div>
               </FormControl>
-              <FormDescription className="text-xs"> {/* Smaller description */}
+              <FormDescription className="text-xs">
                 上載張清啲嘅相，或者用相機即刻影返張。
               </FormDescription>
               <FormMessage />
@@ -365,55 +322,140 @@ export default function AvatarGenerationForm() {
         />
 
 
-        {/* Kimono Selector */}
+        {/* Kimono Selector Grid */}
         <FormField
           control={form.control}
           name="kimono"
           render={({ field }) => (
-            <FormItem>
-              <FormLabel className="text-lg font-semibold">揀件和服👘</FormLabel>
-                 <Select onValueChange={field.onChange} defaultValue={field.value}>
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="揀你鍾意嘅和服款式" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                       {kimonos.map((kimono) => (
-                         <SelectableImageItem key={kimono.id} item={kimono} type="kimono" />
-                       ))}
-                    </SelectContent>
-                 </Select>
+            <FormItem className="space-y-1"> {/* Reduced space */}
+              <FormLabel className="text-base font-semibold">揀件和服👘</FormLabel>
               <FormDescription className="text-xs">
                 揀件和服俾你個頭像着啦。mouse hover可以放大睇㗎！
               </FormDescription>
+              <FormControl>
+                <RadioGroup
+                  onValueChange={field.onChange}
+                  defaultValue={field.value}
+                  className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2 pt-1" // Responsive grid layout
+                >
+                  {kimonos.map((kimono) => (
+                    <FormItem key={kimono.id} className="relative">
+                      <FormControl>
+                        <TooltipProvider delayDuration={100}>
+                           <Tooltip>
+                              <TooltipTrigger asChild>
+                                  <RadioGroupItem value={kimono.id} id={`kimono-${kimono.id}`} className="sr-only peer" />
+                              </TooltipTrigger>
+                               <TooltipContent side="bottom" className="p-0 border-none bg-transparent shadow-xl max-w-xs">
+                                 <Image
+                                    src={kimono.src}
+                                    alt={kimono.name}
+                                    width={200} // Larger preview size
+                                    height={200}
+                                    className="rounded-md object-cover"
+                                    data-ai-hint={kimono.dataAiHint}
+                                  />
+                                  <p className="mt-1 text-center text-sm font-medium bg-background/90 backdrop-blur-sm px-2 py-1 rounded-b-md">
+                                     {kimono.name}
+                                  </p>
+                               </TooltipContent>
+                            </Tooltip>
+                         </TooltipProvider>
+                      </FormControl>
+                      <FormLabel
+                        htmlFor={`kimono-${kimono.id}`}
+                        className={cn(
+                          "block cursor-pointer rounded-md border-2 border-muted bg-popover transition-all duration-150 ease-in-out",
+                          "hover:border-accent hover:shadow-md",
+                          "peer-data-[state=checked]:border-primary peer-data-[state=checked]:ring-2 peer-data-[state=checked]:ring-primary/50 peer-data-[state=checked]:shadow-lg" // Styling for selected item
+                        )}
+                      >
+                        <div className="aspect-square overflow-hidden rounded-t-md">
+                           <Image
+                            src={kimono.src}
+                            alt={kimono.name}
+                            width={100}
+                            height={100}
+                            className="h-full w-full object-cover transition-transform duration-200 hover:scale-105"
+                            data-ai-hint={kimono.dataAiHint}
+                          />
+                        </div>
+                        <p className="truncate text-xs font-medium text-center p-1 bg-muted/50 rounded-b-md">{kimono.name}</p>
+                      </FormLabel>
+                    </FormItem>
+                  ))}
+                </RadioGroup>
+              </FormControl>
               <FormMessage />
             </FormItem>
           )}
         />
 
-        {/* Background Selector */}
+
+        {/* Background Selector Grid */}
         <FormField
           control={form.control}
           name="background"
           render={({ field }) => (
-            <FormItem>
-              <FormLabel className="text-lg font-semibold">揀個背景🏞️</FormLabel>
-               <Select onValueChange={field.onChange} defaultValue={field.value}>
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="揀個靚靚背景" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                       {backgrounds.map((bg) => (
-                         <SelectableImageItem key={bg.id} item={bg} type="background" />
-                       ))}
-                    </SelectContent>
-                  </Select>
+            <FormItem className="space-y-1"> {/* Reduced space */}
+              <FormLabel className="text-base font-semibold">揀個背景🏞️</FormLabel>
               <FormDescription className="text-xs">
-                揀個背景襯托你嘅頭像。mouse hover可以放大睇㗎！
+                 揀個背景襯托你嘅頭像。mouse hover可以放大睇㗎！
               </FormDescription>
+              <FormControl>
+                 <RadioGroup
+                   onValueChange={field.onChange}
+                   defaultValue={field.value}
+                   className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2 pt-1" // Responsive grid layout
+                 >
+                   {backgrounds.map((bg) => (
+                     <FormItem key={bg.id} className="relative">
+                       <FormControl>
+                          <TooltipProvider delayDuration={100}>
+                             <Tooltip>
+                               <TooltipTrigger asChild>
+                                  <RadioGroupItem value={bg.id} id={`bg-${bg.id}`} className="sr-only peer" />
+                               </TooltipTrigger>
+                               <TooltipContent side="bottom" className="p-0 border-none bg-transparent shadow-xl max-w-xs">
+                                   <Image
+                                    src={bg.src}
+                                    alt={bg.name}
+                                    width={200} // Larger preview size
+                                    height={200}
+                                    className="rounded-md object-cover"
+                                    data-ai-hint={bg.dataAiHint}
+                                   />
+                                   <p className="mt-1 text-center text-sm font-medium bg-background/90 backdrop-blur-sm px-2 py-1 rounded-b-md">
+                                      {bg.name}
+                                   </p>
+                               </TooltipContent>
+                             </Tooltip>
+                          </TooltipProvider>
+                       </FormControl>
+                       <FormLabel
+                         htmlFor={`bg-${bg.id}`}
+                         className={cn(
+                            "block cursor-pointer rounded-md border-2 border-muted bg-popover transition-all duration-150 ease-in-out",
+                            "hover:border-accent hover:shadow-md",
+                            "peer-data-[state=checked]:border-primary peer-data-[state=checked]:ring-2 peer-data-[state=checked]:ring-primary/50 peer-data-[state=checked]:shadow-lg" // Styling for selected item
+                         )}
+                       >
+                          <div className="aspect-video overflow-hidden rounded-t-md"> {/* Use aspect-video for backgrounds */}
+                              <Image
+                               src={bg.src}
+                               alt={bg.name}
+                               width={160} // Adjust size if needed
+                               height={90}
+                               className="h-full w-full object-cover transition-transform duration-200 hover:scale-105"
+                               data-ai-hint={bg.dataAiHint}
+                              />
+                           </div>
+                           <p className="truncate text-xs font-medium text-center p-1 bg-muted/50 rounded-b-md">{bg.name}</p>
+                       </FormLabel>
+                     </FormItem>
+                   ))}
+                 </RadioGroup>
+              </FormControl>
               <FormMessage />
             </FormItem>
           )}
@@ -424,13 +466,13 @@ export default function AvatarGenerationForm() {
            control={form.control}
            name="userDescription"
            render={({ field }) => (
-             <FormItem>
-               <FormLabel className="text-lg font-semibold">加啲細節（可以唔填）</FormLabel>
+             <FormItem className="space-y-1"> {/* Reduced space */}
+               <FormLabel className="text-base font-semibold">加啲細節（可以唔填）</FormLabel>
                <FormControl>
                  <Textarea
                    placeholder="例如：戴眼鏡、微笑、揸住把扇..."
-                   className="resize-none text-sm" // smaller text
-                   rows={2} // shorter textarea
+                   className="resize-none text-sm h-16" // shorter textarea
+                   rows={2}
                    {...field}
                  />
                </FormControl>
@@ -444,23 +486,23 @@ export default function AvatarGenerationForm() {
 
 
          {/* Submit Button & Progress */}
-        <div className="space-y-3"> {/* Reduced space-y */}
-           <Button type="submit" disabled={isPending} className="w-full bg-accent hover:bg-accent/90 text-accent-foreground h-11 text-base"> {/* Larger button */}
+        <div className="space-y-2 pt-2"> {/* Reduced space-y, added pt */}
+           <Button type="submit" disabled={isPending} className="w-full bg-accent hover:bg-accent/90 text-accent-foreground h-10 text-base"> {/* Slightly smaller button */}
               {isPending ? (
                 <>
-                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> {/* Smaller loader */}
                   生成緊...
                 </>
               ) : (
                  <>
-                   <Wand2 className="mr-2 h-5 w-5" /> {/* Changed Icon */}
+                   <Wand2 className="mr-2 h-5 w-5" />
                    施展魔法！生成頭像
                  </>
               )}
             </Button>
             {isPending && (
-              <div className="space-y-1"> {/* Reduced space-y */}
-                 <Progress value={progress} className="w-full [&>div]:bg-accent h-2" /> {/* Thinner progress bar */}
+              <div className="space-y-1">
+                 <Progress value={progress} className="w-full [&>div]:bg-accent h-1.5" /> {/* Thinner progress bar */}
                  <p className="text-xs text-center text-muted-foreground">努力生成緊你嘅頭像，等等啊...</p>
                </div>
             )}
@@ -469,16 +511,16 @@ export default function AvatarGenerationForm() {
 
         {/* Generated Image Display */}
         {generatedImageUrl && !isPending && ( // Only show when not pending
-          <Card className="mt-6 border-accent/50"> {/* Reduced mt */}
-            <CardContent className="p-4">
-               <Alert variant="default" className="mb-3 border-accent bg-accent/10"> {/* Reduced mb */}
+          <Card className="mt-4 border-accent/50"> {/* Reduced mt */}
+            <CardContent className="p-3"> {/* Reduced padding */}
+               <Alert variant="default" className="mb-2 border-accent bg-accent/10 p-3"> {/* Reduced margin/padding */}
                   <Sparkles className="h-4 w-4 text-accent" />
-                  <AlertTitle className="text-accent font-semibold">搞掂！✨</AlertTitle>
-                  <AlertDescription className="text-xs"> {/* Smaller text */}
+                  <AlertTitle className="text-accent font-semibold text-sm">搞掂！✨</AlertTitle> {/* Smaller title */}
+                  <AlertDescription className="text-xs">
                     你嘅靚靚櫻花頭像整好喇！右掣或者長按就可以儲存。
                   </AlertDescription>
                 </Alert>
-              <div className="aspect-square relative w-full max-w-md mx-auto rounded-lg overflow-hidden shadow-md">
+              <div className="aspect-square relative w-full max-w-sm mx-auto rounded-lg overflow-hidden shadow-md"> {/* Slightly smaller max-w */}
                 <Image
                   src={generatedImageUrl}
                   alt="生成嘅頭像"
@@ -489,7 +531,7 @@ export default function AvatarGenerationForm() {
               </div>
                <Button
                     variant="outline"
-                    className="w-full mt-4 text-sm h-9"
+                    className="w-full mt-3 text-sm h-9" // Reduced mt
                     onClick={() => {
                         setGeneratedImageUrl(null); // Clear image
                         form.reset(); // Reset form
