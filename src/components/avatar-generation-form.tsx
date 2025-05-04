@@ -81,6 +81,7 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
   const watchedPhoto = form.watch("photo");
   const watchedKimono = form.watch("kimono");
   const watchedBackground = form.watch("background");
+  const watchedUserDescription = form.watch("userDescription"); // Watch description too
 
   const qrCodeUrl = watchedUsername
     ? `https://upload-photo-dot-comfyuiserver2024.uc.r.appspot.com/?userName=${encodeURIComponent(watchedUsername)}`
@@ -91,9 +92,9 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
     const steps = ["username-section", "photo-section", "kimono-section", "background-section", "description-section"];
     const currentIndex = steps.indexOf(currentStep);
     if (currentIndex < steps.length - 1) {
-        // Only advance if the current step is valid (or if it's the camera capture step)
+        // Only advance if the current step is valid
         const fieldName = currentStep.split('-')[0] as keyof AvatarFormValues;
-        if ((fieldName && !form.formState.errors[fieldName]) || currentStep === 'photo-section') { // Allow advance from photo even if camera was just used
+        if (fieldName && !form.formState.errors[fieldName]) {
            setActiveAccordionItem(steps[currentIndex + 1]);
         }
     }
@@ -144,31 +145,32 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
     }, []);
 
 
-  // --- Camera Control Functions ---
+   // --- Camera Control Functions ---
 
-  // Stop camera stream
-  const stopCamera = useCallback(() => {
-    if (videoRef.current && videoRef.current.srcObject) {
-        try {
-            const stream = videoRef.current.srcObject as MediaStream;
-            stream.getTracks().forEach(track => track.stop());
-            videoRef.current.srcObject = null;
-            console.log("Camera stream stopped.");
-         } catch (error) {
-            console.error("Error stopping camera stream:", error);
-         }
-     }
-     // Only set isCapturing false if it was true
-     // Don't clear preview here
-     if (isCapturing) {
-         setIsCapturing(false);
-     }
- }, [isCapturing]);
+   // Stop camera stream
+   const stopCamera = useCallback(() => {
+     if (videoRef.current && videoRef.current.srcObject) {
+         try {
+             const stream = videoRef.current.srcObject as MediaStream;
+             stream.getTracks().forEach(track => track.stop());
+             videoRef.current.srcObject = null;
+             console.log("Camera stream stopped.");
+          } catch (error) {
+             console.error("Error stopping camera stream:", error);
+          }
+      }
+      // Only set isCapturing false if it was true
+      if (isCapturing) {
+          setIsCapturing(false);
+      }
+  }, [isCapturing]);
 
 
   // Handle photo selection (from file upload, camera, or fetched photos)
   const handlePhotoSelection = useCallback((source: 'file' | 'camera' | 'fetched', data: File | string | ImageOption) => {
-    stopCamera(); // Stop camera if running
+    if (source !== 'camera') { // Only stop camera if not selecting a camera shot
+       stopCamera();
+    }
     setSelectedFetchedPhotoId(null); // Clear selection from fetched list
     form.clearErrors("photo");
 
@@ -204,15 +206,15 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
     setSelectedPhotoPreview(previewUrl);
     setSelectedFetchedPhotoId(fetchedId);
 
-    // Manually advance ONLY if selection is valid AND it's not from the camera
-    // Let user confirm camera shots before advancing.
+    // Manually advance after valid selection
     form.trigger("photo").then(isValid => {
-        if (isValid && source !== 'camera') { // Don't auto-advance after camera shot
+        if (isValid) {
+             // Add a slight delay to allow preview update
              setTimeout(() => nextStep("photo-section"), 100);
         }
     });
 
-  }, [form, stopCamera, selectedPhotoPreview]); // Add selectedPhotoPreview dependency
+  }, [form, stopCamera, selectedPhotoPreview, nextStep]); // Add nextStep dependency
 
 
   // Start camera capture
@@ -258,7 +260,8 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
       const context = canvasRef.current.getContext('2d');
       const video = videoRef.current;
 
-      if (context && video.readyState >= video.HAVE_METADATA && video.videoWidth > 0) { // Use HAVE_METADATA
+      // Use HAVE_ENOUGH_DATA for safer capture - ensures frame data is available
+      if (context && video.readyState >= video.HAVE_ENOUGH_DATA && video.videoWidth > 0) {
         const videoWidth = video.videoWidth;
         const videoHeight = video.videoHeight;
 
@@ -279,13 +282,11 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
         console.log("Photo drawn to canvas.");
 
         const dataUrl = canvasRef.current.toDataURL('image/png'); // Use PNG for consistency
-        handlePhotoSelection('camera', dataUrl);
+        handlePhotoSelection('camera', dataUrl); // Pass dataUrl to handler
         // handlePhotoSelection now calls stopCamera
         console.log("Photo captured successfully (as data URL).");
 
-        // Do NOT automatically advance accordion here.
-        // Let the user see the preview and manually proceed.
-        // nextStep("photo-section");
+        // nextStep("photo-section") is now called within handlePhotoSelection
 
       } else {
          console.error("Capture failed: Video not ready or context unavailable.", { readyState: video.readyState, width: video.videoWidth });
@@ -304,10 +305,7 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
     console.log(`Fetching photos for user: ${username}`);
     startFetchingPhotosTransition(async () => {
         setFetchedPhotos([]); // Clear previous photos immediately
-        // Don't clear selected photo yet, only if fetch succeeds with 0 photos
-        // setSelectedFetchedPhotoId(null);
-        // form.setValue("photo", undefined);
-        // setSelectedPhotoPreview(null);
+        const currentPhotoValue = form.getValues("photo"); // Check if a photo is already selected
 
         const result = await fetchPhotosAction(username);
 
@@ -319,8 +317,8 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
                     title: "圖片已載入",
                     description: `搵到 ${result.photos.length} 張 ${username} 嘅相。`,
                 });
-                 // Automatically select the first photo ONLY IF no photo is currently selected in the form
-                 if (!form.getValues("photo")) {
+                 // Only auto-select if NO photo is currently selected in the form
+                 if (!currentPhotoValue) {
                     console.log("Auto-selecting first fetched photo.");
                     handlePhotoSelection('fetched', result.photos[0]);
                  }
@@ -330,10 +328,12 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
                     description: `暫時未搵到 ${username} 嘅相。試下用QR code上載？`,
                     variant: "default",
                 });
-                 // Clear selection if fetch succeeds but returns no photos
-                 setSelectedFetchedPhotoId(null);
-                 form.setValue("photo", undefined, { shouldValidate: true }); // Clear and validate
-                 setSelectedPhotoPreview(null);
+                 // Clear selection only if fetch succeeds with 0 photos AND no photo was selected before
+                 if (!currentPhotoValue) {
+                     setSelectedFetchedPhotoId(null);
+                     form.setValue("photo", undefined, { shouldValidate: false }); // Clear without validate
+                     setSelectedPhotoPreview(null);
+                 }
             }
         } else {
             console.error("Error fetching user photos:", result.error);
@@ -343,13 +343,15 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
                 variant: "destructive",
             });
             setFetchedPhotos([]);
-            // Clear selection on fetch error
-            setSelectedFetchedPhotoId(null);
-            form.setValue("photo", undefined, { shouldValidate: true }); // Clear and validate
-            setSelectedPhotoPreview(null);
+            // Clear selection only if no photo was selected before the error
+            if (!currentPhotoValue) {
+                setSelectedFetchedPhotoId(null);
+                form.setValue("photo", undefined, { shouldValidate: false }); // Clear without validate
+                setSelectedPhotoPreview(null);
+            }
         }
     });
-  }, [toast, form, handlePhotoSelection]);
+  }, [toast, form, handlePhotoSelection]); // Added form, handlePhotoSelection
 
 
   // Cleanup camera on component unmount
@@ -442,10 +444,10 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
           });
            setActiveAccordionItem(''); // Collapse all sections after success
         } else {
-          // Use the specific error from the action if available
-          const errorMessage = result.error || "伺服器發生未知錯誤。";
-          console.error("Generation failed in action:", errorMessage);
-          throw new Error(errorMessage); // Throw the specific error
+           // Use the specific error from the action if available
+           const errorMessage = result.error || "伺服器發生未知錯誤。";
+           console.error("Generation failed in action:", errorMessage);
+           throw new Error(errorMessage); // Throw the specific error
         }
 
       } catch (error: any) {
@@ -578,7 +580,8 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
             {/* --- Description Section --- */}
             <UserDescriptionInput
               form={form}
-              value={form.watch('userDescription')}
+              value={watchedUserDescription}
+              onValueChange={(value) => form.setValue('userDescription', value, { shouldValidate: true })} // Ensure value updates RHF
               disabled={!watchedBackground || !!form.formState.errors.background || isPending} // Disable if no valid background or pending
             />
 
@@ -626,3 +629,4 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
     </TooltipProvider>
   );
 }
+
