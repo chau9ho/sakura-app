@@ -15,7 +15,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="zh-HK"> {/* Set language to Hong Kong Cantonese */}
+    <html lang="zh-HK">{/* Set language to Hong Kong Cantonese */}
       <body className={`${GeistSans.variable} font-sans antialiased flex flex-col min-h-screen`}>
         <Header />
         <main className="flex-grow container mx-auto px-4 py-6"> {/* Reduced py padding */}
