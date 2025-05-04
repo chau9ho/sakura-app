@@ -21,6 +21,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { generateAvatarPrompt } from '@/ai/flows/generate-avatar-prompt';
+import { fetchPhotosAction } from '@/app/actions/fetch-photos'; // Import the server action
 import { Loader2, Upload, Camera, Sparkles, Wand2, Image as ImageIcon, Shirt, Trees, Pencil, CheckCircle2, User, QrCode, RefreshCw } from 'lucide-react'; // Added relevant icons
 import { Progress } from "@/components/ui/progress";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -60,6 +61,7 @@ const formSchema = z.object({
 export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }: AvatarGenerationFormProps) {
   const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
+  const [isFetchingPhotos, startFetchingPhotosTransition] = useTransition(); // Separate transition for fetching
   const [generatedImageUrl, setGeneratedImageUrl] = useState<string | null>(null);
   const [progress, setProgress] = useState<number>(0);
   const [selectedPhotoPreview, setSelectedPhotoPreview] = useState<string | null>(null);
@@ -68,7 +70,8 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
   const canvasRef = React.useRef<HTMLCanvasElement>(null);
   const [isQrCodeDialogOpen, setIsQrCodeDialogOpen] = useState(false);
   const [fetchedPhotos, setFetchedPhotos] = useState<ImageOption[]>([]);
-  const [isLoadingPhotos, setIsLoadingPhotos] = useState<boolean>(false);
+  // Use isFetchingPhotos transition state for loading indicator
+  // const [isLoadingPhotos, setIsLoadingPhotos] = useState<boolean>(false); // Replaced by isFetchingPhotos
   const [selectedFetchedPhotoId, setSelectedFetchedPhotoId] = useState<string | null>(null);
 
   const form = useForm<z.infer<typeof formSchema>>({
@@ -95,94 +98,37 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
   // --- Photo Fetching Logic ---
   const fetchUserPhotos = useCallback(async (username: string) => {
     if (!username) return;
-    setIsLoadingPhotos(true);
-    setFetchedPhotos([]); // Clear previous photos
-    console.log(`Simulating fetching photos for user: ${username}`);
-    // **IMPORTANT:** Replace this simulation with actual API call to list/fetch photos
-    // This likely involves a backend endpoint that checks the GCP bucket for the user.
-    try {
-      // Simulate API call delay
-      await new Promise(resolve => setTimeout(resolve, 1500));
 
-      // Simulate finding some photos (replace with actual fetched data)
-      // Example structure - URLs should point to actual images in the bucket
-      const simulatedPhotos: ImageOption[] = [
-         // Example: Construct URL based on naming convention if possible
-         // This is fragile and depends heavily on the upload service's naming
-        {
-          id: `${username}_1.png`,
-          name: `上載圖片 1`,
-          src: `https://storage.googleapis.com/motherday/${username}_1745417437826.png`, // Example URL structure
-          description: `Uploaded photo 1 for ${username}`,
-          dataAiHint: 'uploaded portrait',
-        },
-         {
-          id: `${username}_2.jpg`,
-          name: `上載圖片 2`,
-          src: `https://storage.googleapis.com/motherday/${username}_another_timestamp.jpg`, // Another example
-          description: `Uploaded photo 2 for ${username}`,
-          dataAiHint: 'uploaded face',
-        },
-        // Add more simulated photos or fetch actual list
-        {
-           id: 'placeholder_random.png',
-           name: '示範圖片',
-           src: `https://picsum.photos/seed/${username}1/100/100`, // Use picsum as placeholder
-           description: `Placeholder photo for ${username}`,
-           dataAiHint: 'person face',
-         },
-          {
-           id: 'placeholder_random2.png',
-           name: '示範圖片 2',
-           src: `https://picsum.photos/seed/${username}2/100/100`, // Use picsum as placeholder
-           description: `Placeholder photo 2 for ${username}`,
-           dataAiHint: 'profile picture',
-         },
+    startFetchingPhotosTransition(async () => {
+        setFetchedPhotos([]); // Clear previous photos immediately
+        console.log(`Fetching photos for user: ${username}`);
 
-      ];
-      // Filter out photos that might 404 immediately (basic check)
-      // More robust checking needed in real implementation
-       const validPhotos = await Promise.all(simulatedPhotos.map(async (photo) => {
-         try {
-           // Basic check: Try fetching headers (more lightweight than full image)
-           // Note: This might be blocked by CORS in a browser environment.
-           // A backend check is more reliable.
-           // const response = await fetch(photo.src, { method: 'HEAD', mode: 'no-cors' });
-           // Simulating validity for now
-           if (photo.src.includes('picsum')) return photo; // Keep picsum placeholders
-           // Assume others might be valid for demo
-           return photo;
-         } catch (e) {
-           console.warn(`Could not access ${photo.src}, skipping.`);
-           return null;
-         }
-       }));
+        const result = await fetchPhotosAction(username); // Call the server action
 
-      setFetchedPhotos(validPhotos.filter(p => p !== null) as ImageOption[]);
-       if (validPhotos.filter(p => p !== null).length > 0) {
-         toast({
-            title: "圖片已載入",
-            description: `搵到 ${validPhotos.filter(p => p !== null).length} 張 ${username} 嘅相。`,
-         });
-       } else {
-          toast({
-            title: "未搵到圖片",
-            description: `暫時未搵到 ${username} 嘅相，試下用QR Code上載？`,
-            variant: "default" // Use default or custom variant
-         });
-       }
-
-
-    } catch (error) {
-      console.error("Error fetching user photos:", error);
-      toast({
-        title: "載入圖片失敗",
-        description: "嘗試載入用戶圖片時發生錯誤。",
-        variant: "destructive",
-      });
-    } finally {
-      setIsLoadingPhotos(false);
-    }
+        if (result.success) {
+            setFetchedPhotos(result.photos);
+            if (result.photos.length > 0) {
+                toast({
+                    title: "圖片已載入",
+                    description: `搵到 ${result.photos.length} 張 ${username} 嘅相。`,
+                });
+            } else {
+                toast({
+                    title: "未搵到圖片",
+                    description: `暫時未搵到 ${username} 嘅相，試下用QR Code上載？`,
+                    variant: "default",
+                });
+            }
+        } else {
+            console.error("Error fetching user photos:", result.error);
+            toast({
+                title: "載入圖片失敗",
+                description: result.error || "嘗試載入用戶圖片時發生錯誤。",
+                variant: "destructive",
+            });
+            setFetchedPhotos([]); // Ensure photos are cleared on error
+        }
+    });
   }, [toast]);
 
 
@@ -322,12 +268,13 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
 
    // Auto-select first fetched photo if none is selected
    useEffect(() => {
-       if (!watchedPhoto && fetchedPhotos.length > 0 && !selectedFetchedPhotoId) {
-           // handlePhotoSelection('fetched', fetchedPhotos[0]);
-           // Optionally auto-select the first photo
-           // console.log("Auto-selecting first fetched photo");
+       // If no photo is actively selected (neither preview nor fetched ID exists),
+       // and there are fetched photos available, select the first one.
+       if (!selectedPhotoPreview && !selectedFetchedPhotoId && fetchedPhotos.length > 0) {
+           console.log("Auto-selecting first fetched photo");
+           handlePhotoSelection('fetched', fetchedPhotos[0]);
        }
-   }, [watchedPhoto, fetchedPhotos, selectedFetchedPhotoId]);
+   }, [fetchedPhotos, selectedPhotoPreview, selectedFetchedPhotoId]); // Add dependencies
 
 
 
@@ -344,17 +291,15 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
         // Ensure photo data is handled correctly (File or data URL or http URL)
         let photoData: string | File = values.photo;
         if (photoData instanceof File) {
-          // If it's a File, you might need to read it as a data URL depending on the AI flow requirement
-          // For this example, let's assume the AI flow can handle the file name/placeholder
            console.log("Using uploaded file:", photoData.name);
-           // If generateAvatarPrompt needs data URL, convert here:
-           // const dataUrl = await new Promise<string>((resolve, reject) => {
-           //   const reader = new FileReader();
-           //   reader.onloadend = () => resolve(reader.result as string);
-           //   reader.onerror = reject;
-           //   reader.readAsDataURL(photoData as File);
-           // });
-           // photoData = dataUrl; // Uncomment if data URL is needed
+           // Convert File to data URL for consistency or if the AI needs it
+           const dataUrl = await new Promise<string>((resolve, reject) => {
+             const reader = new FileReader();
+             reader.onloadend = () => resolve(reader.result as string);
+             reader.onerror = reject;
+             reader.readAsDataURL(photoData as File);
+           });
+           photoData = dataUrl; // Now photoData is always a string (data URL or http URL)
         } else {
            console.log("Using photo from camera/fetched URL/data URL");
         }
@@ -395,47 +340,15 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
          //       Make sure to handle the image data correctly (e.g., as data URI if needed).
         console.log("準備調用圖像生成...");
         console.log("將使用提示:", promptResult.prompt);
-        console.log("將使用圖片:", photoData instanceof File ? photoData.name : (typeof photoData === 'string' ? photoData.substring(0, 50)+'...' : '未知圖片來源'));
-
-        // Example using ai.generate with Gemini 2.0 Flash experimental image generation
-        // Note: Requires proper setup and potentially passing the image as context.
-        // let generatedImageResultUrl = null;
-        // try {
-        //   const { media } = await ai.generate({
-        //      model: 'googleai/gemini-2.0-flash-exp', // Use the correct model
-        //      prompt: [
-        //        // Include the uploaded/captured photo as context if needed by the model/prompt
-        //        // This might require converting the File to a data URI first
-        //        // { media: { url: photoData } }, // Assuming photoData is a data URI or accessible URL
-        //        { text: promptResult.prompt }
-        //      ],
-        //      config: {
-        //        responseModalities: ['TEXT', 'IMAGE'],
-        //      },
-        //   });
-        //   generatedImageResultUrl = media?.url; // This will be a data URI (e.g., "data:image/png;base64,...")
-        //   console.log("圖像生成成功:", generatedImageResultUrl ? generatedImageResultUrl.substring(0, 60)+'...' : '無結果');
-        //   setProgress(90);
-        // } catch (genError) {
-        //   console.error("圖像生成失敗:", genError);
-        //   toast({
-        //     title: "圖像生成失敗",
-        //     description: "調用AI生成圖像時發生錯誤。",
-        //     variant: "destructive",
-        //   });
-        //   clearInterval(interval);
-        //   setProgress(0);
-        //   return;
-        // }
+        console.log("將使用圖片:", typeof photoData === 'string' ? photoData.substring(0, 60)+'...' : '未知圖片來源');
 
         // --- Using Placeholder Image Generation ---
         console.log("模擬圖像生成中...");
         await new Promise(resolve => setTimeout(resolve, 2000)); // Simulate delay
         setProgress(90);
         const simulatedImageUrl = `https://picsum.photos/512/512?random=${Date.now()}`;
-        // generatedImageResultUrl = simulatedImageUrl; // Use placeholder
 
-        setGeneratedImageUrl(simulatedImageUrl); // Replace with generatedImageResultUrl when using real generation
+        setGeneratedImageUrl(simulatedImageUrl);
         setProgress(100);
         // --- End Placeholder ---
 
@@ -566,8 +479,8 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
                                                         <p className="text-destructive">請先輸入用戶名。</p>
                                                     )}
                                                     </div>
-                                                     <Button type="button" variant="default" size="sm" onClick={() => fetchUserPhotos(watchedUsername)} disabled={isLoadingPhotos || !watchedUsername}>
-                                                         {isLoadingPhotos ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+                                                     <Button type="button" variant="default" size="sm" onClick={() => fetchUserPhotos(watchedUsername)} disabled={isFetchingPhotos || !watchedUsername}>
+                                                         {isFetchingPhotos ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
                                                          重新整理上載列表
                                                     </Button>
                                                 </DialogContent>
@@ -598,13 +511,13 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
                                 <div className="mt-2 pt-2 border-t border-border">
                                     <div className="flex justify-between items-center mb-1 px-1">
                                         <FormLabel className="text-sm font-medium">已上載嘅相</FormLabel>
-                                        <Button type="button" variant="ghost" size="sm" onClick={() => fetchUserPhotos(watchedUsername)} disabled={isLoadingPhotos} className="h-7 px-2 text-xs">
-                                            {isLoadingPhotos ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="mr-1 h-3.5 w-3.5" />}
+                                        <Button type="button" variant="ghost" size="sm" onClick={() => fetchUserPhotos(watchedUsername)} disabled={isFetchingPhotos} className="h-7 px-2 text-xs">
+                                            {isFetchingPhotos ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="mr-1 h-3.5 w-3.5" />}
                                             重新整理
                                         </Button>
                                     </div>
                                      <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 gap-1.5">
-                                        {isLoadingPhotos ? (
+                                        {isFetchingPhotos ? (
                                             Array.from({ length: 4 }).map((_, idx) => (
                                                  <Skeleton key={`skel-${idx}`} className="aspect-square rounded-md bg-muted/50" />
                                              ))
@@ -625,7 +538,12 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
                                                         fill
                                                         sizes="(max-width: 640px) 20vw, (max-width: 768px) 16vw, 12vw" // Adjust sizes
                                                         className="object-cover"
-                                                        onError={(e) => { e.currentTarget.style.display = 'none'; /* Hide broken images */ }}
+                                                        onError={(e) => {
+                                                            // Attempt to hide parent button if image fails
+                                                            const buttonElement = e.currentTarget.closest('button');
+                                                            if (buttonElement) buttonElement.style.display = 'none';
+                                                            console.warn(`無法載入圖片: ${photo.src}`);
+                                                         }}
                                                     />
                                                     {selectedFetchedPhotoId === photo.id && (
                                                         <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
@@ -892,9 +810,20 @@ export default function AvatarGenerationForm({ kimonos = [], backgrounds = [] }:
                     className="w-full mt-2 text-sm h-9"
                     onClick={() => {
                         setGeneratedImageUrl(null);
-                        form.reset(); // Reset form including username
+                        form.reset({ // Reset form with default values
+                          username: watchedUsername, // Keep username maybe? Or clear it too: ""
+                          photo: undefined,
+                          kimono: "",
+                          background: "",
+                          userDescription: ""
+                        });
                         setSelectedPhotoPreview(null);
-                        setFetchedPhotos([]); // Clear fetched photos
+                        // Refetch photos if username is kept, or clear if username is cleared
+                        if (watchedUsername) {
+                            fetchUserPhotos(watchedUsername); // Refetch for the same user
+                        } else {
+                           setFetchedPhotos([]); // Clear fetched photos if username is reset
+                        }
                         setSelectedFetchedPhotoId(null);
                      }}
                     >
