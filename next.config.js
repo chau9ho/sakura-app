@@ -20,8 +20,15 @@ const nextConfig = {
          protocol: 'http',
          hostname: 'localhost',
          // Add the port if your dev server uses a specific one (e.g., '3000', '9002')
-         // port: '9002', // Example: Adjust if needed
+         port: '9002', // Example: Adjust if needed
          pathname: '/**',
+       },
+       // Allow images from the ComfyUI server on the local network during development
+       {
+         protocol: 'http',
+         hostname: '192.168.50.144', // Allow specific local network IP
+         port: '8188', // ComfyUI port
+         pathname: '/view/**', // Allow images from the /view endpoint
        },
        // Allow images from Google Cloud Storage
        {

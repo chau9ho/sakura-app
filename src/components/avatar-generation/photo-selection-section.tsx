@@ -9,15 +9,16 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ImageIcon, Upload, Camera, QrCode, RefreshCw, CheckCircle2, Loader2 } from 'lucide-react';
+import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert"; // Added Alert
+import { ImageIcon, Upload, Camera, QrCode, RefreshCw, CheckCircle2, Loader2, AlertTriangle } from 'lucide-react'; // Added AlertTriangle
 import { cn } from "@/lib/utils";
-import type { ImageOption } from './types'; // Adjust path as needed
-import type { AvatarFormValues } from '../avatar-generation-form'; // Adjust path as needed
+import type { ImageOption } from './types';
+import type { AvatarFormValues } from '../avatar-generation-form';
 
 interface PhotoSelectionSectionProps {
   form: UseFormReturn<AvatarFormValues>;
   watchedUsername: string;
-  watchedPhoto: any; // Consider a more specific type if possible
+  watchedPhoto: any;
   selectedPhotoPreview: string | null;
   isCapturing: boolean;
   videoRef: RefObject<HTMLVideoElement>;
@@ -36,6 +37,7 @@ interface PhotoSelectionSectionProps {
   capturePhoto: () => void;
   nextStep: () => void;
   disabled?: boolean;
+  hasCameraPermission: boolean | null; // Added prop for permission status
 }
 
 const PhotoSelectionSection: React.FC<PhotoSelectionSectionProps> = ({
@@ -60,6 +62,7 @@ const PhotoSelectionSection: React.FC<PhotoSelectionSectionProps> = ({
   capturePhoto,
   nextStep,
   disabled = false,
+  hasCameraPermission, // Destructure the new prop
 }) => {
   return (
     <AccordionItem value="photo-section" disabled={disabled}>
@@ -81,29 +84,43 @@ const PhotoSelectionSection: React.FC<PhotoSelectionSectionProps> = ({
                   {/* --- Upload/Camera Options --- */}
                   <div className="flex flex-col sm:flex-row gap-2 items-start mb-3">
                     <div className="flex-1 space-y-1">
-                      {/* Preview Area (Smaller for headshot focus) */}
+                      {/* Preview Area */}
                       <div className="relative w-full max-w-[200px] mx-auto aspect-square border border-dashed border-primary/50 rounded-lg flex items-center justify-center bg-secondary/50 overflow-hidden">
                         {selectedPhotoPreview ? (
                           <Image
                             src={selectedPhotoPreview}
                             alt="已選相片預覽"
                             fill
-                            objectFit="contain" // Use contain to show the whole image, or cover if crop is preferred
-                            sizes="(max-width: 640px) 50vw, 200px" // Adjusted sizes
+                            objectFit="contain"
+                            sizes="(max-width: 640px) 50vw, 200px"
+                            // Ensure unique key if src can change rapidly, though fill/objectFit usually handles it
+                            key={selectedPhotoPreview}
                           />
                         ) : isCapturing ? (
-                          <video ref={videoRef} className="w-full h-full object-cover" autoPlay playsInline muted />
+                           // Show video only when capturing AND permission granted
+                          <video ref={videoRef} className={cn("w-full h-full object-cover", hasCameraPermission === false && "hidden")} autoPlay playsInline muted />
                         ) : (
                           <div className="text-center text-foreground/80 p-2">
                             <ImageIcon className="mx-auto h-6 w-6 mb-1" />
                             <span className="text-xs">預覽會喺度顯示</span>
                           </div>
                         )}
-                        {/* Hidden video element needed for camera stream */}
-                        {!isCapturing && <video ref={videoRef} className="absolute w-px h-px opacity-0 pointer-events-none" playsInline muted />}
+                         {/* Always render video element for ref, but hide it when not capturing */}
+                         {!isCapturing && <video ref={videoRef} className="absolute w-px h-px -z-10 opacity-0 pointer-events-none" playsInline muted />}
                       </div>
                       {/* Hidden canvas for capturing photo */}
                       <canvas ref={canvasRef} style={{ display: 'none' }}></canvas>
+
+                      {/* Camera Permission Alert */}
+                      {hasCameraPermission === false && !isCapturing && (
+                        <Alert variant="destructive" className="max-w-[200px] mx-auto p-2 text-xs">
+                          <AlertTriangle className="h-3 w-3" />
+                          <AlertTitle className="text-xs">相機權限</AlertTitle>
+                          <AlertDescription className="text-xs">
+                            無法存取相機。請喺瀏覽器設定允許權限。
+                          </AlertDescription>
+                        </Alert>
+                      )}
 
                       {/* Action Buttons */}
                       <div className="flex gap-1.5 max-w-[200px] mx-auto">
@@ -118,6 +135,7 @@ const PhotoSelectionSection: React.FC<PhotoSelectionSectionProps> = ({
                                 accept="image/*"
                                 className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                                 onChange={handleFileUploadChange}
+                                // Add key to force re-render if needed, though not typical for file inputs
                               />
                             </Button>
                             {/* QR Code Upload Button */}
@@ -160,7 +178,14 @@ const PhotoSelectionSection: React.FC<PhotoSelectionSectionProps> = ({
                             <Button type="button" variant="secondary" size="sm" className="flex-1 text-xs h-8 px-2" onClick={stopCamera}>
                               取消
                             </Button>
-                            <Button type="button" variant="default" size="sm" className="flex-1 text-xs h-8 px-2" onClick={capturePhoto}>
+                            <Button
+                              type="button"
+                              variant="default"
+                              size="sm"
+                              className="flex-1 text-xs h-8 px-2"
+                              onClick={capturePhoto}
+                              disabled={hasCameraPermission === false} // Disable capture if no permission
+                            >
                               影啦！
                             </Button>
                           </>
@@ -226,7 +251,7 @@ const PhotoSelectionSection: React.FC<PhotoSelectionSectionProps> = ({
                 </div>
               </FormControl>
               <FormDescription className="text-xs text-foreground/80 px-1 pt-1">
-                用上面嘅方法揀一張相，或者揀返之前上載過嘅相。
+                用上面嘅方法揀一張相，或者揀返之前上載過嘅相。影完相之後，相片會顯示喺上面預覽區域。
               </FormDescription>
               <FormMessage className="px-1" />
             </FormItem>
@@ -238,4 +263,3 @@ const PhotoSelectionSection: React.FC<PhotoSelectionSectionProps> = ({
 };
 
 export default PhotoSelectionSection;
-    
