@@ -64,6 +64,10 @@ const PhotoSelectionSection: React.FC<PhotoSelectionSectionProps> = ({
   disabled = false,
   hasCameraPermission, // Destructure the new prop
 }) => {
+  const showVideo = isCapturing && hasCameraPermission;
+  const showPreview = selectedPhotoPreview && !isCapturing;
+  const showPlaceholder = !showVideo && !showPreview;
+
   return (
     <AccordionItem value="photo-section" disabled={disabled}>
       <AccordionTrigger className="text-base font-semibold hover:no-underline px-2 py-2 rounded-md hover:bg-secondary/50 data-[state=open]:bg-secondary/80 disabled:opacity-50">
@@ -84,35 +88,35 @@ const PhotoSelectionSection: React.FC<PhotoSelectionSectionProps> = ({
                   {/* --- Upload/Camera Options --- */}
                   <div className="flex flex-col sm:flex-row gap-2 items-start mb-3">
                     <div className="flex-1 space-y-1">
-                      {/* Preview Area */}
+                      {/* Preview Area - Ensure fixed aspect ratio */}
                       <div className="relative w-full max-w-[200px] mx-auto aspect-square border border-dashed border-primary/50 rounded-lg flex items-center justify-center bg-secondary/50 overflow-hidden">
-                        {/* Always render video element, control visibility with className */}
+                        {/* Video Element */}
                         <video
                           ref={videoRef}
                           className={cn(
                             "w-full h-full object-cover",
-                            // Show only if capturing and has permission, hide otherwise
-                            (!isCapturing || hasCameraPermission === false) && "hidden"
+                            // Explicitly show when capturing and permission is granted
+                            showVideo ? "block" : "hidden"
                           )}
                           autoPlay
-                          playsInline
-                          muted
+                          playsInline // Important for mobile
+                          muted // Important for autoplay
                         />
 
-                        {/* Show preview image if available and not capturing */}
-                        {selectedPhotoPreview && !isCapturing && (
+                        {/* Preview Image */}
+                        {showPreview && (
                           <Image
                             src={selectedPhotoPreview}
                             alt="已選相片預覽"
                             fill
-                            objectFit="contain"
+                            className="object-contain" // Use contain to avoid cropping previews
                             sizes="(max-width: 640px) 50vw, 200px"
                             key={selectedPhotoPreview} // Ensure key updates if src changes
                           />
                         )}
 
-                         {/* Show placeholder only if not capturing AND no preview exists */}
-                         {!isCapturing && !selectedPhotoPreview && (
+                         {/* Placeholder */}
+                         {showPlaceholder && (
                             <div className="text-center text-foreground/80 p-2">
                               <ImageIcon className="mx-auto h-6 w-6 mb-1" />
                               <span className="text-xs">預覽會喺度顯示</span>
@@ -122,7 +126,7 @@ const PhotoSelectionSection: React.FC<PhotoSelectionSectionProps> = ({
                       {/* Hidden canvas for capturing photo */}
                       <canvas ref={canvasRef} style={{ display: 'none' }}></canvas>
 
-                      {/* Camera Permission Alert - Show when permission denied, regardless of capture state */}
+                      {/* Camera Permission Alert */}
                       {hasCameraPermission === false && (
                         <Alert variant="destructive" className="max-w-[200px] mx-auto p-2 text-xs">
                           <AlertTriangle className="h-3 w-3" />
